@@ -80,20 +80,23 @@ const Monitor = () => {
       </header>
 
       {/* Main Content */}
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 max-w-[1600px]">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Camera Feed */}
           <div className="lg:col-span-2">
-            <Card className="border-border">
-              <CardHeader className="border-b border-border">
+            <Card className="border-border shadow-xl overflow-hidden">
+              <CardHeader className="border-b border-border bg-card">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-foreground">Live Camera Feed</CardTitle>
+                  <CardTitle className="text-foreground text-xl flex items-center gap-2">
+                    <Video className="w-5 h-5 text-primary" />
+                    Live Camera Feed
+                  </CardTitle>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => setIsLive(!isLive)}
-                      className="border-border"
+                      className="border-border hover:bg-primary hover:text-primary-foreground transition-colors"
                     >
                       {isLive ? (
                         <Video className="w-4 h-4" />
@@ -101,38 +104,61 @@ const Monitor = () => {
                         <VideoOff className="w-4 h-4" />
                       )}
                     </Button>
-                    <Button variant="outline" size="icon" className="border-border">
+                    <Button variant="outline" size="icon" className="border-border hover:bg-primary hover:text-primary-foreground transition-colors">
                       <RefreshCw className="w-4 h-4" />
                     </Button>
-                    <Button variant="outline" size="icon" className="border-border">
+                    <Button variant="outline" size="icon" className="border-border hover:bg-primary hover:text-primary-foreground transition-colors">
                       <Maximize2 className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="aspect-video bg-secondary relative flex items-center justify-center">
+                <div className="aspect-video bg-gradient-to-br from-secondary via-muted to-secondary relative flex items-center justify-center overflow-hidden">
                   {isLive ? (
                     <>
-                      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-accent/5" />
+                      <div className="absolute inset-0">
+                        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.05),transparent_50%)]" />
+                      </div>
                       <div className="text-center z-10">
-                        <Video className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                        <p className="text-muted-foreground">
-                          Camera feed would appear here
+                        <div className="relative">
+                          <div className="w-24 h-24 gradient-primary rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl animate-pulse-slow">
+                            <Video className="w-12 h-12 text-white" />
+                          </div>
+                          <div className="absolute inset-0 gradient-primary rounded-full blur-2xl opacity-20 animate-pulse" />
+                        </div>
+                        <p className="text-foreground font-semibold text-lg mb-2">
+                          Camera Feed Display Area
                         </p>
-                        <p className="text-sm text-muted-foreground mt-2">
+                        <p className="text-muted-foreground">
                           Webcam integration ready for implementation
                         </p>
                       </div>
-                      <div className="absolute top-4 left-4 flex items-center gap-2 bg-danger/90 text-danger-foreground px-3 py-1.5 rounded-full text-sm font-medium">
-                        <span className="w-2 h-2 bg-danger-foreground rounded-full animate-pulse" />
-                        RECORDING
+                      <div className="absolute top-6 left-6 flex items-center gap-2 gradient-danger px-4 py-2.5 rounded-full text-sm font-bold text-white shadow-lg">
+                        <span className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />
+                        REC
+                      </div>
+                      <div className="absolute top-6 right-6 bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border shadow-lg">
+                        <p className="text-xs text-muted-foreground">Resolution</p>
+                        <p className="text-sm font-semibold text-foreground">1920 x 1080</p>
+                      </div>
+                      <div className="absolute bottom-6 left-6 bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border shadow-lg">
+                        <p className="text-xs text-muted-foreground">FPS</p>
+                        <p className="text-sm font-semibold text-foreground">30</p>
+                      </div>
+                      <div className="absolute bottom-6 right-6 bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border shadow-lg">
+                        <p className="text-xs text-muted-foreground">Bitrate</p>
+                        <p className="text-sm font-semibold text-foreground">2.5 Mbps</p>
                       </div>
                     </>
                   ) : (
                     <div className="text-center">
-                      <VideoOff className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">Camera feed offline</p>
+                      <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                        <VideoOff className="w-10 h-10 text-muted-foreground" />
+                      </div>
+                      <p className="text-foreground font-semibold mb-1">Camera feed offline</p>
+                      <p className="text-sm text-muted-foreground">Click the video icon to reconnect</p>
                     </div>
                   )}
                 </div>
@@ -142,50 +168,76 @@ const Monitor = () => {
 
           {/* Monitoring Info */}
           <div className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="text-foreground">Monitoring Details</CardTitle>
+            <Card className="border-border shadow-xl">
+              <CardHeader className="border-b border-border">
+                <CardTitle className="text-foreground flex items-center gap-2">
+                  <div className="w-2 h-6 gradient-primary rounded-full" />
+                  Monitoring Details
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Employee ID</p>
-                  <p className="font-medium text-foreground">{id}</p>
+              <CardContent className="space-y-4 p-6">
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Employee ID</p>
+                  <p className="font-semibold text-foreground">{id}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Department</p>
-                  <p className="font-medium text-foreground">Engineering</p>
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Department</p>
+                  <p className="font-semibold text-foreground">Engineering</p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Shift</p>
-                  <p className="font-medium text-foreground">Morning (9:00 AM - 5:00 PM)</p>
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Shift</p>
+                  <p className="font-semibold text-foreground">9:00 AM - 5:00 PM</p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Location</p>
-                  <p className="font-medium text-foreground">Office - Floor 3</p>
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Location</p>
+                  <p className="font-semibold text-foreground">Office - Floor 3</p>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="border-border">
-              <CardHeader>
-                <CardTitle className="text-foreground">Today's Activity</CardTitle>
+            <Card className="border-border shadow-xl">
+              <CardHeader className="border-b border-border">
+                <CardTitle className="text-foreground flex items-center gap-2">
+                  <div className="w-2 h-6 gradient-success rounded-full" />
+                  Today's Activity
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Hours Worked</p>
-                  <p className="font-medium text-foreground">6h 32m</p>
+              <CardContent className="space-y-4 p-6">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-primary/5 to-transparent">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Hours Worked</p>
+                    <p className="font-bold text-foreground text-xl">6h 32m</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <span className="text-2xl">⏰</span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Tasks Completed</p>
-                  <p className="font-medium text-foreground">8 / 10</p>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-success/5 to-transparent">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Tasks Completed</p>
+                    <p className="font-bold text-foreground text-xl">8 / 10</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center">
+                    <span className="text-2xl">✅</span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Compliance Score</p>
-                  <p className="font-medium text-foreground">92%</p>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-accent/5 to-transparent">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Compliance Score</p>
+                    <p className="font-bold text-foreground text-xl">92%</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
+                    <span className="text-2xl">📊</span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Break Time</p>
-                  <p className="font-medium text-foreground">45 minutes</p>
+                <div className="flex items-center justify-between p-3 rounded-lg bg-gradient-to-r from-warning/5 to-transparent">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Break Time</p>
+                    <p className="font-bold text-foreground text-xl">45 min</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center">
+                    <span className="text-2xl">☕</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
