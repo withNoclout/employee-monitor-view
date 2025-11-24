@@ -35,3 +35,5 @@ Initial setup and rapid development of the NextXO Employee Monitor dashboard, fo
 - **Real AI Training**: Connect the TensorFlow.js simulation to actual `model.fit()` calls using the uploaded datasets.
 - **Python Integration**: The `dataset/` folder is structured to be consumed by the Python scripts in `training_scripts/` for more powerful offline training.
 - **Live Inference**: Connect the `Monitor.tsx` page to a real video feed and run the TF.js model for real-time detection.
+- **KNN Movement Training**: Currently uses a local webcam for training movement/gestures. 
+  - *Future Task*: Replace local webcam access with a connection to the IP camera stream for the production environment.
