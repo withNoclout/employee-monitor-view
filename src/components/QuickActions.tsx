@@ -1,23 +1,29 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, FileText, Settings, Bell, Users, BarChart3, Brain } from "lucide-react";
+import { Download, FileText, Settings, Bell, Users, BarChart3, Brain, Hammer } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export const QuickActions = () => {
   const navigate = useNavigate();
 
   const actions = [
-    { icon: <Download className="w-4 h-4" />, label: "Export Report", variant: "default" as const },
-    { icon: <FileText className="w-4 h-4" />, label: "View Logs", variant: "outline" as const },
-    { icon: <Settings className="w-4 h-4" />, label: "Settings", variant: "outline" as const },
-    { icon: <Bell className="w-4 h-4" />, label: "Alerts", variant: "outline" as const },
-    { icon: <Users className="w-4 h-4" />, label: "Manage Team", variant: "outline" as const },
-    { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", variant: "outline" as const },
+    { icon: <Download className="w-4 h-4" />, label: "Export Report", variant: "default" as const, disabled: true },
+    { icon: <FileText className="w-4 h-4" />, label: "View Logs", variant: "outline" as const, disabled: true },
+    { icon: <Settings className="w-4 h-4" />, label: "Settings", variant: "outline" as const, disabled: true },
+    { icon: <Bell className="w-4 h-4" />, label: "Alerts", variant: "outline" as const, disabled: true },
+    { icon: <Users className="w-4 h-4" />, label: "Manage Team", variant: "outline" as const, disabled: true },
+    { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", variant: "outline" as const, disabled: true },
     { 
       icon: <Brain className="w-4 h-4" />, 
       label: "Training", 
       variant: "outline" as const,
       onClick: () => navigate("/training")
+    },
+    { 
+      icon: <Hammer className="w-4 h-4" />, 
+      label: "Build WI", 
+      variant: "outline" as const,
+      onClick: () => navigate("/build-wi")
     },
   ];
 
@@ -34,6 +40,7 @@ export const QuickActions = () => {
               variant={action.variant}
               className="w-full justify-start gap-2 h-auto py-3"
               onClick={action.onClick}
+              disabled={action.disabled}
             >
               {action.icon}
               <span className="text-sm">{action.label}</span>
