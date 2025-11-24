@@ -39,8 +39,8 @@ export const DashboardHeader = () => {
       <div className="mb-8 relative">
         <div className="absolute inset-0 gradient-primary opacity-5 blur-3xl -z-10" />
         <h1 className="text-4xl font-bold text-foreground mb-3 flex items-center gap-3">
-          <Activity className="w-10 h-10 text-primary" />
-          Employee Monitoring Dashboard
+          <img src="/logo.svg" alt="NextXO Logo" className="w-10 h-10" />
+          NextXO Employee Monitor
         </h1>
         <p className="text-muted-foreground text-lg">
           Real-time overview of employee performance and compliance monitoring

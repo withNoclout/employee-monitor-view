@@ -1,8 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, FileText, Settings, Bell, Users, BarChart3 } from "lucide-react";
+import { Download, FileText, Settings, Bell, Users, BarChart3, Brain } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export const QuickActions = () => {
+  const navigate = useNavigate();
+
   const actions = [
     { icon: <Download className="w-4 h-4" />, label: "Export Report", variant: "default" as const },
     { icon: <FileText className="w-4 h-4" />, label: "View Logs", variant: "outline" as const },
@@ -10,6 +13,12 @@ export const QuickActions = () => {
     { icon: <Bell className="w-4 h-4" />, label: "Alerts", variant: "outline" as const },
     { icon: <Users className="w-4 h-4" />, label: "Manage Team", variant: "outline" as const },
     { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", variant: "outline" as const },
+    { 
+      icon: <Brain className="w-4 h-4" />, 
+      label: "Training", 
+      variant: "outline" as const,
+      onClick: () => navigate("/training")
+    },
   ];
 
   return (
@@ -24,6 +33,7 @@ export const QuickActions = () => {
               key={index}
               variant={action.variant}
               className="w-full justify-start gap-2 h-auto py-3"
+              onClick={action.onClick}
             >
               {action.icon}
               <span className="text-sm">{action.label}</span>
