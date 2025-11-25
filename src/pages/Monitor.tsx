@@ -90,8 +90,12 @@ const Monitor = () => {
 
   // Performance optimization - frame skipping
   const frameCountRef = useRef<number>(0);
-  const FRAME_SKIP = 3; // Process every 3rd frame for hand detection
-  const COMPONENT_DETECTION_INTERVAL = 1500; // ms between YOLO detections
+  const HAND_FRAME_SKIP = 20; // Process every 20th frame for hand detection
+  
+  // Adaptive component detection frequency
+  const FAST_DETECTION_INTERVAL = 500;  // ms - when searching for objects
+  const SLOW_DETECTION_INTERVAL = 2000; // ms - when object already found (>70%)
+  const detectionIntervalRef = useRef<number>(FAST_DETECTION_INTERVAL);
 
   const employee = id ? employeeData[id] : null;
 
@@ -231,7 +235,7 @@ const Monitor = () => {
 
         // Frame skipping - only process every Nth frame for performance
         frameCountRef.current++;
-        const shouldProcessFrame = frameCountRef.current % FRAME_SKIP === 0;
+        const shouldProcessFrame = frameCountRef.current % HAND_FRAME_SKIP === 0;
 
         // Hand Detection (with frame skipping)
         let hands: handPoseDetection.Hand[] = [];
@@ -274,8 +278,9 @@ const Monitor = () => {
 
         // Component Detection (throttled + ROI optimization)
         // ROI = Region of Interest - only detect in center areas (2,4,5,6,8 of 3x3 grid)
+        // Adaptive frequency: fast (500ms) when searching, slow (2000ms) when found
         const now = Date.now();
-        if (!isDetecting && now - lastDetectionTime.current > COMPONENT_DETECTION_INTERVAL) {
+        if (!isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
           lastDetectionTime.current = now;
           setIsDetecting(true);
 
@@ -326,6 +331,26 @@ const Monitor = () => {
                     }
                   }));
                   setCurrentComponents(adjustedDetections);
+                  
+                  // Adaptive detection frequency
+                  // Check if any detection has >70% confidence
+                  const hasHighConfidence = adjustedDetections.some(
+                    (det: Detection) => det.confidence >= 0.70
+                  );
+                  
+                  if (hasHighConfidence) {
+                    // Object found - slow down detection
+                    detectionIntervalRef.current = SLOW_DETECTION_INTERVAL;
+                    console.log('[Adaptive] Object found (>70%), slowing to 2000ms');
+                  } else {
+                    // No confident detection - speed up to search
+                    detectionIntervalRef.current = FAST_DETECTION_INTERVAL;
+                    console.log('[Adaptive] Searching for objects, fast mode 500ms');
+                  }
+                } else {
+                  // No detections at all - fast search mode
+                  setCurrentComponents([]);
+                  detectionIntervalRef.current = FAST_DETECTION_INTERVAL;
                 }
                 if (result.error) {
                   console.warn('YOLO Error:', result.error);
@@ -333,6 +358,8 @@ const Monitor = () => {
               }
             } catch (err) {
               console.error('Detection API error:', err);
+              // On error, use fast interval to retry
+              detectionIntervalRef.current = FAST_DETECTION_INTERVAL;
             }
           }
           setIsDetecting(false);
