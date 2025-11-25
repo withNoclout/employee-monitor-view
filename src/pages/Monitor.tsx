@@ -90,7 +90,8 @@ const Monitor = () => {
 
   // Performance optimization - frame skipping
   const frameCountRef = useRef<number>(0);
-  const HAND_FRAME_SKIP = 20; // Process every 20th frame for hand detection
+  const HAND_FRAME_SKIP = 2; // Process every 2nd frame = ~15fps hand detection at 30fps camera
+  // This gives roughly 15-20 hand detections per second
   
   // Adaptive component detection frequency
   const FAST_DETECTION_INTERVAL = 500;  // ms - when searching for objects
