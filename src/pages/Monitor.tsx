@@ -88,6 +88,11 @@ const Monitor = () => {
   const verificationHoldTime = useRef<number>(0);
   const HOLD_DURATION = 2000; // Hold gesture/component for 2 seconds to verify
 
+  // Performance optimization - frame skipping
+  const frameCountRef = useRef<number>(0);
+  const FRAME_SKIP = 3; // Process every 3rd frame for hand detection
+  const COMPONENT_DETECTION_INTERVAL = 1500; // ms between YOLO detections
+
   const employee = id ? employeeData[id] : null;
 
   // Load Hand Pose Detector
@@ -224,9 +229,19 @@ const Monitor = () => {
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Hand Detection
-        const hands = await detector.estimateHands(video);
-        setHandsDetected(hands.length);
+        // Frame skipping - only process every Nth frame for performance
+        frameCountRef.current++;
+        const shouldProcessFrame = frameCountRef.current % FRAME_SKIP === 0;
+
+        // Hand Detection (with frame skipping)
+        let hands: handPoseDetection.Hand[] = [];
+        if (shouldProcessFrame) {
+          hands = await detector.estimateHands(video);
+          setHandsDetected(hands.length);
+        } else {
+          // Use cached hand count
+          hands = []; // Skip detection this frame
+        }
 
         let detectedGesture: string | null = null;
 
@@ -257,20 +272,36 @@ const Monitor = () => {
 
         setCurrentGesture(detectedGesture);
 
-        // Component Detection (throttled)
+        // Component Detection (throttled + ROI optimization)
+        // ROI = Region of Interest - only detect in center areas (2,4,5,6,8 of 3x3 grid)
         const now = Date.now();
-        if (!isDetecting && now - lastDetectionTime.current > 1000) {
+        if (!isDetecting && now - lastDetectionTime.current > COMPONENT_DETECTION_INTERVAL) {
           lastDetectionTime.current = now;
           setIsDetecting(true);
 
+          // Calculate ROI - center cross pattern (areas 2,4,5,6,8)
+          // This is effectively the middle 2/3 width and 2/3 height
+          const roiX = Math.floor(video.videoWidth / 6);  // Start at 1/6 from left
+          const roiY = Math.floor(video.videoHeight / 6); // Start at 1/6 from top
+          const roiWidth = Math.floor(video.videoWidth * 2 / 3);  // 2/3 of width
+          const roiHeight = Math.floor(video.videoHeight * 2 / 3); // 2/3 of height
+
           const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = video.videoWidth;
-          tempCanvas.height = video.videoHeight;
+          tempCanvas.width = roiWidth;
+          tempCanvas.height = roiHeight;
           const tempCtx = tempCanvas.getContext('2d');
           
           if (tempCtx) {
-            tempCtx.drawImage(video, 0, 0);
-            const base64 = tempCanvas.toDataURL('image/jpeg', 0.8);
+            // Draw only the ROI region
+            tempCtx.drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
+            const base64 = tempCanvas.toDataURL('image/jpeg', 0.7); // Slightly lower quality for speed
+            
+            // Draw ROI indicator on main canvas (subtle)
+            ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(roiX, roiY, roiWidth, roiHeight);
+            ctx.setLineDash([]);
 
             try {
               const response = await fetch('http://localhost:3000/api/detect', {
@@ -283,7 +314,18 @@ const Monitor = () => {
                 const result = await response.json();
                 console.log('YOLO Detection result:', result);
                 if (result.detections) {
-                  setCurrentComponents(result.detections);
+                  // Adjust bbox coordinates from ROI to full frame
+                  const adjustedDetections = result.detections.map((det: Detection) => ({
+                    ...det,
+                    bbox: {
+                      // Convert ROI-relative coords to full-frame coords
+                      x1: (det.bbox.x1 * roiWidth + roiX) / video.videoWidth,
+                      y1: (det.bbox.y1 * roiHeight + roiY) / video.videoHeight,
+                      x2: (det.bbox.x2 * roiWidth + roiX) / video.videoWidth,
+                      y2: (det.bbox.y2 * roiHeight + roiY) / video.videoHeight,
+                    }
+                  }));
+                  setCurrentComponents(adjustedDetections);
                 }
                 if (result.error) {
                   console.warn('YOLO Error:', result.error);
@@ -467,17 +509,26 @@ const Monitor = () => {
     }
   }, [id]);
 
-  // Camera Setup
+  // Camera Setup - Optimized resolution for inference
   useEffect(() => {
     let stream: MediaStream | null = null;
 
     const startCamera = async () => {
       if (isLive && id === "emp-001") {
         try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          // Use 640x480 - optimal for MobileNet/MediaPipe and YOLO inference
+          // Reduces processing load significantly vs 1920x1080
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: {
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              frameRate: { ideal: 30 }
+            }
+          });
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
           }
+          console.log('[Performance] Camera started at optimized 640x480 resolution');
         } catch (err) {
           console.error("Error accessing webcam:", err);
           toast.error("Could not access webcam");
