@@ -66,3 +66,75 @@ Initial setup and rapid development of the NextXO Employee Monitor dashboard, fo
 - **Backend Integration**: Move from `localStorage` to a real database for Teams and Work Instructions.
 - **Real Model Inference**: Connect the custom object detection model to the Monitor page's visualization.
 - **Reporting**: Implement the "Export Report" functionality in Quick Actions.
+
+---
+
+## Session: November 25, 2025 (Evening) - Gesture Recognition Overhaul
+
+### Major Changes: GRU → DTW + k-NN
+
+#### Problem with Previous Approach
+- The GRU (neural network) approach required significant training time and data
+- Velocity-based gesture detection was unreliable (timeout issues, coordinate bugs)
+- Complex recording triggers made UX frustrating
+
+#### New Architecture: Dynamic Time Warping (DTW) + k-Nearest Neighbors
+- **DTW Algorithm**: Measures similarity between temporal sequences regardless of speed variations
+  - Perfect for gestures performed at different speeds
+  - Custom implementation with Sakoe-Chiba band for O(n²) → O(n·w) optimization
+- **k-NN (k=3)**: Simple majority vote classification from nearest templates
+  - No training required - just stores reference sequences
+  - Instant "training" by building template library
+- **Normalization**: Landmarks normalized to wrist origin, scaled by palm size
+
+#### Key Implementation Files
+- `gesture_workflow/scripts/dtw_gesture.py`: Main DTW + k-NN classifier
+  - Modes: `--train`, `--stream`, `--classify`, `--info`
+  - Uses pickle (.pkl) for model serialization
+- `src/pages/Training.tsx`: Updated training UI
+
+#### Recording System Overhaul
+- **Removed**: Velocity-based motion detection (was buggy)
+- **Added**: Fixed-duration recording per gesture class
+- **Per-Gesture Duration**: Each gesture class stores its own recording duration (2-6 seconds)
+  - Set when creating the gesture class in "Add Gesture" dialog
+  - Duration selector: 2s, 3s, 4s, 5s, 6s buttons
+- **Test Mode**: Uses fixed 3-second duration for universal testing
+
+#### UI Updates
+- **Add Gesture Dialog**: Now includes duration selector
+- **Webcam Overlay**: Shows selected gesture's recording duration
+- **Record Button**: Displays duration (e.g., "Record 3s")
+- **Badge System**: "Trained" vs "New" status for each gesture class
+
+#### Data Structure
+```json
+// gesture_workflow/classes.json
+{
+  "classes": [{
+    "id": "gesture_xxx",
+    "name": "wave",
+    "displayName": "Wave",
+    "duration": 3,
+    "createdAt": "..."
+  }]
+}
+```
+
+#### Server Updates (`server.js`)
+- POST `/api/gestures/classes` now accepts `duration` field
+- Model endpoints updated for DTW (.pkl files instead of .h5)
+- Sequence storage unchanged (JSON files per recording)
+
+### Benefits of DTW Approach
+1. **No Training Wait**: Templates stored instantly
+2. **Speed Invariant**: Same gesture at different speeds still matches
+3. **Interpretable**: Can debug by examining distance to each template
+4. **Low Data Requirement**: Works with just 1-3 samples per class
+
+### Current Status
+- ✅ DTW implementation complete
+- ✅ Per-gesture duration feature complete
+- ✅ Recording system simplified
+- ✅ Server updated for new model format
+- 🔄 Ready for testing with real gestures

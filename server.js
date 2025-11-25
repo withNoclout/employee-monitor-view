@@ -16,9 +16,10 @@ const port = 3000;
 // Python interpreter path (from venv)
 const PYTHON_PATH = '/home/noclout/Vision_sign/QC_hackaton/server/venv/bin/python';
 const TRAIN_SCRIPT = path.join(__dirname, 'yolo_workflow', 'scripts', 'train_model.py');
+const GESTURE_TRAIN_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Configure Multer for file uploads
 const upload = multer({ dest: 'uploads/' });
@@ -27,6 +28,16 @@ const upload = multer({ dest: 'uploads/' });
 const YOLO_WORKFLOW_DIR = path.join(__dirname, 'yolo_workflow');
 const RAW_DATA_DIR = path.join(YOLO_WORKFLOW_DIR, 'raw_data');
 const CLASSES_FILE = path.join(YOLO_WORKFLOW_DIR, 'classes.txt');
+
+// Gesture workflow directories
+const GESTURE_WORKFLOW_DIR = path.join(__dirname, 'gesture_workflow');
+const GESTURES_DIR = path.join(GESTURE_WORKFLOW_DIR, 'gestures');
+const GESTURE_CLASSES_FILE = path.join(GESTURE_WORKFLOW_DIR, 'classes.json');
+
+// Ensure gesture directories exist
+if (!fs.existsSync(GESTURES_DIR)) {
+    fs.mkdirSync(GESTURES_DIR, { recursive: true });
+}
 
 if (!fs.existsSync(RAW_DATA_DIR)) {
     fs.mkdirSync(RAW_DATA_DIR, { recursive: true });
@@ -275,3 +286,359 @@ app.post('/api/detect', express.json({ limit: '10mb' }), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// ================== GESTURE API ENDPOINTS ==================
+
+// Helper to load gesture classes
+function loadGestureClasses() {
+    if (fs.existsSync(GESTURE_CLASSES_FILE)) {
+        return JSON.parse(fs.readFileSync(GESTURE_CLASSES_FILE, 'utf-8'));
+    }
+    return { classes: [], version: "1.0", created_at: null, updated_at: null };
+}
+
+// Helper to save gesture classes
+function saveGestureClasses(data) {
+    data.updated_at = new Date().toISOString();
+    fs.writeFileSync(GESTURE_CLASSES_FILE, JSON.stringify(data, null, 2));
+}
+
+// Get all gesture classes with sequence counts
+app.get('/api/gestures/classes', (req, res) => {
+    try {
+        const classData = loadGestureClasses();
+        
+        // Count sequences per class
+        const classesWithCounts = classData.classes.map(cls => {
+            const classDir = path.join(GESTURES_DIR, cls.name);
+            let sequenceCount = 0;
+            let totalFrames = 0;
+            
+            if (fs.existsSync(classDir)) {
+                const files = fs.readdirSync(classDir).filter(f => f.endsWith('.json'));
+                sequenceCount = files.length;
+                
+                // Count total frames across all sequences
+                files.forEach(file => {
+                    try {
+                        const seq = JSON.parse(fs.readFileSync(path.join(classDir, file), 'utf-8'));
+                        totalFrames += seq.frames?.length || 0;
+                    } catch (e) {}
+                });
+            }
+            
+            return {
+                ...cls,
+                sequenceCount,
+                totalFrames
+            };
+        });
+        
+        res.json(classesWithCounts);
+    } catch (error) {
+        console.error('Error fetching gesture classes:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add new gesture class
+app.post('/api/gestures/classes', (req, res) => {
+    try {
+        const { name, duration } = req.body;
+        if (!name) {
+            return res.status(400).json({ error: 'Class name required' });
+        }
+        
+        const classData = loadGestureClasses();
+        
+        // Check for duplicate
+        const safeName = name.toLowerCase().replace(/\s+/g, '_');
+        if (classData.classes.some(c => c.name === safeName)) {
+            return res.status(400).json({ error: 'Class already exists' });
+        }
+        
+        // Create class directory
+        const classDir = path.join(GESTURES_DIR, safeName);
+        if (!fs.existsSync(classDir)) {
+            fs.mkdirSync(classDir, { recursive: true });
+        }
+        
+        // Add to classes
+        const newClass = {
+            id: `gesture_${Date.now()}`,
+            name: safeName,
+            displayName: name,
+            duration: duration || 2, // Default 2 seconds
+            createdAt: new Date().toISOString()
+        };
+        
+        classData.classes.push(newClass);
+        if (!classData.created_at) classData.created_at = new Date().toISOString();
+        saveGestureClasses(classData);
+        
+        res.json(newClass);
+    } catch (error) {
+        console.error('Error creating gesture class:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete gesture class
+app.delete('/api/gestures/classes/:className', (req, res) => {
+    try {
+        const { className } = req.params;
+        const classData = loadGestureClasses();
+        
+        // Remove from classes list
+        classData.classes = classData.classes.filter(c => c.name !== className);
+        saveGestureClasses(classData);
+        
+        // Optionally delete data directory (keeping for safety, just removing from training)
+        // const classDir = path.join(GESTURES_DIR, className);
+        // if (fs.existsSync(classDir)) { fs.rmSync(classDir, { recursive: true }); }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting gesture class:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Save a gesture sequence
+app.post('/api/gestures/sequences', (req, res) => {
+    try {
+        const { className, frames, metadata } = req.body;
+        
+        if (!className || !frames || !Array.isArray(frames)) {
+            return res.status(400).json({ error: 'className and frames array required' });
+        }
+        
+        const classData = loadGestureClasses();
+        const safeName = className.toLowerCase().replace(/\s+/g, '_');
+        
+        // Ensure class exists
+        if (!classData.classes.some(c => c.name === safeName)) {
+            return res.status(400).json({ error: 'Class does not exist' });
+        }
+        
+        // Create class directory if needed
+        const classDir = path.join(GESTURES_DIR, safeName);
+        if (!fs.existsSync(classDir)) {
+            fs.mkdirSync(classDir, { recursive: true });
+        }
+        
+        // Generate sequence ID
+        const existingFiles = fs.readdirSync(classDir).filter(f => f.endsWith('.json'));
+        const sequenceNum = existingFiles.length + 1;
+        const sequenceId = `sequence_${String(sequenceNum).padStart(3, '0')}`;
+        
+        // Create sequence data
+        const sequenceData = {
+            class: safeName,
+            sequence_id: sequenceId,
+            recorded_at: new Date().toISOString(),
+            frames: frames, // Array of { timestamp, left_hand, right_hand }
+            metadata: {
+                fps: metadata?.fps || 30,
+                duration_ms: metadata?.duration_ms || (frames.length * 33),
+                frame_count: frames.length,
+                ...metadata
+            }
+        };
+        
+        // Save sequence
+        const filePath = path.join(classDir, `${sequenceId}.json`);
+        fs.writeFileSync(filePath, JSON.stringify(sequenceData, null, 2));
+        
+        console.log(`Saved gesture sequence: ${safeName}/${sequenceId} (${frames.length} frames)`);
+        
+        res.json({
+            success: true,
+            sequenceId,
+            className: safeName,
+            frameCount: frames.length
+        });
+    } catch (error) {
+        console.error('Error saving gesture sequence:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get sequences for a class
+app.get('/api/gestures/sequences/:className', (req, res) => {
+    try {
+        const { className } = req.params;
+        const classDir = path.join(GESTURES_DIR, className);
+        
+        if (!fs.existsSync(classDir)) {
+            return res.json([]);
+        }
+        
+        const files = fs.readdirSync(classDir).filter(f => f.endsWith('.json'));
+        const sequences = files.map(file => {
+            const data = JSON.parse(fs.readFileSync(path.join(classDir, file), 'utf-8'));
+            return {
+                sequence_id: data.sequence_id,
+                recorded_at: data.recorded_at,
+                frame_count: data.frames?.length || 0,
+                duration_ms: data.metadata?.duration_ms || 0
+            };
+        });
+        
+        res.json(sequences);
+    } catch (error) {
+        console.error('Error fetching sequences:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete a sequence
+app.delete('/api/gestures/sequences/:className/:sequenceId', (req, res) => {
+    try {
+        const { className, sequenceId } = req.params;
+        const filePath = path.join(GESTURES_DIR, className, `${sequenceId}.json`);
+        
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting sequence:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Train gesture model
+app.post('/api/gestures/train', (req, res) => {
+    console.log('Starting gesture model training...');
+    
+    // Set headers for streaming
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    const pythonProcess = spawn(PYTHON_PATH, [GESTURE_TRAIN_SCRIPT, '--train']);
+    
+    pythonProcess.stdout.on('data', (data) => {
+        const msg = data.toString();
+        console.log(`[Gesture Train]: ${msg}`);
+        res.write(msg);
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+        const msg = data.toString();
+        console.error(`[Gesture Train Error]: ${msg}`);
+        res.write(msg);
+    });
+
+    pythonProcess.on('close', (code) => {
+        console.log(`Gesture training process exited with code ${code}`);
+        if (code === 0) {
+            res.write('\n[TRAINING_COMPLETE]\n');
+        } else {
+            res.write(`\n[TRAINING_FAILED] Code: ${code}\n`);
+        }
+        res.end();
+    });
+});
+
+// Get gesture model info
+app.get('/api/gestures/model', (req, res) => {
+    try {
+        const modelPath = path.join(GESTURE_WORKFLOW_DIR, 'models', 'gesture_model.pkl');
+        const modelInfoPath = path.join(GESTURE_WORKFLOW_DIR, 'models', 'model_info.json');
+        
+        if (!fs.existsSync(modelPath)) {
+            return res.json({ exists: false });
+        }
+        
+        let modelInfo = { exists: true };
+        if (fs.existsSync(modelInfoPath)) {
+            modelInfo = {
+                ...modelInfo,
+                ...JSON.parse(fs.readFileSync(modelInfoPath, 'utf-8'))
+            };
+        }
+        
+        res.json(modelInfo);
+    } catch (error) {
+        console.error('Error fetching model info:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Gesture inference endpoint
+const GESTURE_INFERENCE_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
+
+app.post('/api/gestures/classify', async (req, res) => {
+    const { frames, threshold } = req.body;
+    
+    if (!frames || !Array.isArray(frames)) {
+        return res.status(400).json({ error: 'frames array required' });
+    }
+    
+    try {
+        const result = await new Promise((resolve, reject) => {
+            const proc = spawn(PYTHON_PATH, [GESTURE_INFERENCE_SCRIPT, '--stream']);
+            let output = '';
+            let error = '';
+            let modelLoaded = false;
+            
+            proc.stdout.on('data', (data) => {
+                const lines = data.toString().split('\n');
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const parsed = JSON.parse(line);
+                        if (parsed.status === 'loaded') {
+                            modelLoaded = true;
+                            // Send the classification request
+                            proc.stdin.write(JSON.stringify({ frames, threshold: threshold || 0.5 }) + '\n');
+                        } else if (parsed.status === 'ready') {
+                            // Already sent after 'loaded'
+                        } else {
+                            // This is the classification result
+                            output = line;
+                            proc.stdin.write('quit\n');
+                        }
+                    } catch (e) {
+                        // Not JSON
+                    }
+                }
+            });
+            
+            proc.stderr.on('data', (data) => {
+                error += data.toString();
+            });
+            
+            proc.on('close', (code) => {
+                if (output) {
+                    try {
+                        resolve(JSON.parse(output));
+                    } catch (e) {
+                        reject(new Error('Failed to parse inference output'));
+                    }
+                } else if (error) {
+                    reject(new Error(error));
+                } else {
+                    reject(new Error('No output from inference'));
+                }
+            });
+            
+            // Timeout after 10 seconds
+            setTimeout(() => {
+                proc.kill();
+                reject(new Error('Inference timeout'));
+            }, 10000);
+        });
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Gesture classification error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Serve gesture models statically
+app.use('/gesture-models', express.static(path.join(__dirname, 'gesture_workflow', 'models')));
+

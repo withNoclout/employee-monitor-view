@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera } from "lucide-react";
+import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { ImageAnnotator } from "@/components/ImageAnnotator";
@@ -25,6 +25,20 @@ interface ClassInfo {
   isTrained: boolean;
   includeInTraining: boolean;
   data?: number[][];  // Array of landmark feature vectors for KNN
+}
+
+// New interface for gesture classes (sequence-based)
+interface GestureClass {
+  id: string;
+  name: string;
+  displayName: string;
+  sequenceCount: number;
+  totalFrames: number;
+  createdAt: string;
+  includeInTraining: boolean;
+  isTrained: boolean;
+  trainedSequenceCount?: number; // Number of sequences when last trained
+  duration?: number; // Recording duration in seconds
 }
 
 const Training = () => {
@@ -58,9 +72,36 @@ const Training = () => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [recordingMessage, setRecordingMessage] = useState("");
   const lastHandsRef = useRef<handPoseDetection.Hand[]>([]);
+  const prevHandsRef = useRef<handPoseDetection.Hand[]>([]);  // Track previous frame for velocity
+  const recordingFramesRef = useRef<any[]>([]);  // Store frames during recording
+  const recordingStartTimeRef = useRef<number>(0);
   
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
   const [newClassName, setNewClassName] = useState("");
+  const [newGestureDuration, setNewGestureDuration] = useState(2); // Default 2 seconds
+
+  // New state for gesture classes (server-synced)
+  const [gestureClasses, setGestureClasses] = useState<GestureClass[]>([]);
+  const [selectedGestureClass, setSelectedGestureClass] = useState<string | null>(null);
+  const [isLoadingGestures, setIsLoadingGestures] = useState(false);
+  const [gestureModelInfo, setGestureModelInfo] = useState<any>(null);
+
+  // Test Gesture Detection state
+  const [isTesting, setIsTesting] = useState(false);
+  const [testCountdown, setTestCountdown] = useState<number | null>(null);
+  const [testConfidence, setTestConfidence] = useState<number | null>(null);
+  const [testDetectedGesture, setTestDetectedGesture] = useState<string | null>(null);
+  const [testMessage, setTestMessage] = useState("");
+  const [showTestResultDialog, setShowTestResultDialog] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    gesture: string;
+    confidence: number;
+    detectionTimeMs: number;
+    frameCount: number;
+    allProbabilities: Record<string, number>;
+  } | null>(null);
+  const testFramesRef = useRef<any[]>([]);
+  const testStartTimeRef = useRef<number>(0);
 
   const [classes, setClasses] = useState<ClassInfo[]>(() => {
     const saved = localStorage.getItem('training_classes');
@@ -91,6 +132,7 @@ const Training = () => {
   const [mobilenetModel, setMobilenetModel] = useState<mobilenet.MobileNet | null>(null);
   const [trainingData, setTrainingData] = useState<{ embedding: tf.Tensor; label: string }[]>([]);
 
+  // Fetch object detection classes
   useEffect(() => {
     const fetchClasses = async () => {
       try {
@@ -114,6 +156,66 @@ const Training = () => {
     };
     
     fetchClasses();
+  }, []);
+
+  // Fetch gesture classes from server
+  const fetchGestureClasses = async () => {
+    setIsLoadingGestures(true);
+    try {
+      const [classesRes, modelRes] = await Promise.all([
+        fetch('http://localhost:3000/api/gestures/classes'),
+        fetch('http://localhost:3000/api/gestures/model')
+      ]);
+      
+      if (classesRes.ok) {
+        const serverClasses = await classesRes.json();
+        let modelInfo = null;
+        if (modelRes.ok) {
+          modelInfo = await modelRes.json();
+          setGestureModelInfo(modelInfo);
+        }
+        
+        // Determine isTrained status based on model info
+        const trainedClasses = modelInfo?.trained_classes || [];
+        const trainedSampleCounts = modelInfo?.class_sample_counts || {};
+        
+        setGestureClasses(serverClasses.map((c: any) => {
+          const wasTrainedWith = trainedClasses.includes(c.name);
+          const trainedCount = trainedSampleCounts[c.name] || 0;
+          // Class is trained if it was in training AND no new sequences added since
+          const isTrained = wasTrainedWith && c.sequenceCount <= trainedCount;
+          
+          return {
+            ...c,
+            includeInTraining: true,
+            isTrained: isTrained,
+            trainedSequenceCount: trainedCount
+          };
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to fetch gesture classes:", error);
+    } finally {
+      setIsLoadingGestures(false);
+    }
+  };
+
+  // Fetch gesture model info
+  const fetchGestureModelInfo = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/gestures/model');
+      if (response.ok) {
+        const info = await response.json();
+        setGestureModelInfo(info);
+      }
+    } catch (error) {
+      console.error("Failed to fetch gesture model info:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchGestureClasses();
+    fetchGestureModelInfo();
   }, []);
 
   useEffect(() => {
@@ -298,28 +400,47 @@ const Training = () => {
     }
   };
 
-  const handleAddClass = () => {
+  const handleAddClass = async () => {
     if (!newClassName.trim()) return;
 
-    const newClass: ClassInfo = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newClassName,
-      count: 0,
-      samples: 0,
-      isTrained: false,
-      includeInTraining: true,
-      data: []
-    };
-
     if (activeTab === 'cnn') {
+      const newClass: ClassInfo = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: newClassName,
+        count: 0,
+        samples: 0,
+        isTrained: false,
+        includeInTraining: true,
+        data: []
+      };
       setClasses([...classes, newClass]);
       toast.success(`Class "${newClassName}" added`);
     } else {
-      setMovementClasses([...movementClasses, newClass]);
-      toast.success(`Gesture "${newClassName}" added`);
+      // Add gesture class via server API
+      try {
+        const response = await fetch('http://localhost:3000/api/gestures/classes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newClassName, duration: newGestureDuration })
+        });
+        
+        if (response.ok) {
+          const newGesture = await response.json();
+          toast.success(`Gesture "${newClassName}" added`);
+          // Refresh gesture classes
+          fetchGestureClasses();
+        } else {
+          const error = await response.json();
+          toast.error(error.error || "Failed to add gesture");
+        }
+      } catch (error) {
+        console.error("Failed to add gesture class:", error);
+        toast.error("Failed to add gesture class");
+      }
     }
 
     setNewClassName("");
+    setNewGestureDuration(2);
     setIsAddClassOpen(false);
   };
 
@@ -335,7 +456,101 @@ const Training = () => {
     }
   };
 
-  // Extract features from hand landmarks (same as Monitor.tsx)
+  // Extract hand landmarks as relative coordinates (wrist = origin)
+  // Returns { landmarks: [[x,y,z], ...] } or null if no valid data
+  const extractHandLandmarks = (hand: handPoseDetection.Hand | null): { landmarks: number[][] } | null => {
+    if (!hand || !hand.keypoints || hand.keypoints.length < 21) return null;
+    
+    const wrist = hand.keypoints[0];
+    const landmarks = hand.keypoints.map(kp => [
+      (kp.x - wrist.x) / 100,  // Normalize relative to wrist
+      (kp.y - wrist.y) / 100,
+      (kp as any).z || 0
+    ]);
+    
+    return { landmarks };
+  };
+
+  // Calculate velocity of hand movement between two frames
+  // Uses absolute wrist position (not relative landmarks)
+  const calculateHandVelocity = (
+    prevHands: handPoseDetection.Hand[] | null,
+    currHands: handPoseDetection.Hand[]
+  ): number => {
+    if (!prevHands || prevHands.length === 0 || currHands.length === 0) return 0;
+    
+    let totalVelocity = 0;
+    let count = 0;
+    
+    // Try to match hands between frames
+    for (const currHand of currHands) {
+      // Find matching hand from previous frame (same handedness)
+      const prevHand = prevHands.find(h => h.handedness === currHand.handedness);
+      if (!prevHand) continue;
+      
+      // Get wrist positions (keypoint 0)
+      const prevWrist = prevHand.keypoints[0];
+      const currWrist = currHand.keypoints[0];
+      
+      if (prevWrist && currWrist) {
+        // Calculate distance moved (in pixels, then normalize by typical frame size)
+        const dx = (currWrist.x - prevWrist.x) / 640; // Normalize by typical width
+        const dy = (currWrist.y - prevWrist.y) / 480; // Normalize by typical height
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        totalVelocity += distance;
+        count++;
+      }
+    }
+    
+    return count > 0 ? totalVelocity / count : 0;
+  };
+
+  // Resample frames to exactly targetLength frames using linear interpolation
+  const resampleFrames = (frames: any[], targetLength: number = 30): any[] => {
+    if (frames.length === 0) return [];
+    if (frames.length === targetLength) return frames;
+    
+    const resampled: any[] = [];
+    
+    for (let i = 0; i < targetLength; i++) {
+      // Calculate the position in the original array
+      const pos = (i / (targetLength - 1)) * (frames.length - 1);
+      const lowerIdx = Math.floor(pos);
+      const upperIdx = Math.min(lowerIdx + 1, frames.length - 1);
+      const t = pos - lowerIdx; // Interpolation factor (0 to 1)
+      
+      const lowerFrame = frames[lowerIdx];
+      const upperFrame = frames[upperIdx];
+      
+      // Interpolate landmarks
+      const interpolateHand = (lower: any, upper: any) => {
+        if (!lower && !upper) return null;
+        if (!lower) return upper;
+        if (!upper) return lower;
+        
+        const landmarks = lower.landmarks.map((lm: number[], idx: number) => {
+          const ulm = upper.landmarks[idx];
+          return [
+            lm[0] + (ulm[0] - lm[0]) * t,
+            lm[1] + (ulm[1] - lm[1]) * t,
+            lm[2] + (ulm[2] - lm[2]) * t
+          ];
+        });
+        
+        return { landmarks };
+      };
+      
+      resampled.push({
+        timestamp: i * (1000 / 30), // Normalized timestamps at 30fps
+        left_hand: interpolateHand(lowerFrame.left_hand, upperFrame.left_hand),
+        right_hand: interpolateHand(lowerFrame.right_hand, upperFrame.right_hand)
+      });
+    }
+    
+    return resampled;
+  };
+
+  // Legacy function for backward compatibility
   const extractFeatures = (hand: handPoseDetection.Hand): number[] => {
     const wrist = hand.keypoints[0];
     return hand.keypoints.flatMap(kp => [
@@ -345,6 +560,265 @@ const Training = () => {
     ]);
   };
 
+  // Simple fixed-duration gesture recording
+  // Records gesture for the class's configured duration
+  const startGestureRecording = async () => {
+    if (!selectedGestureClass) {
+      toast.error("Please select a gesture class first");
+      return;
+    }
+    
+    const gestureClass = gestureClasses.find(c => c.name === selectedGestureClass);
+    if (!gestureClass) {
+      toast.error("Invalid gesture class");
+      return;
+    }
+
+    setIsRecording(true);
+    recordingFramesRef.current = [];
+    
+    // Use the gesture class's duration, fallback to 2 seconds
+    const classDuration = gestureClass.duration || 2;
+    const RECORDING_DURATION = classDuration * 1000; // Convert to ms
+    const FRAME_INTERVAL = 33;       // ~30fps
+    
+    try {
+      // Phase 1: Countdown
+      setRecordingMessage("Get Ready...");
+      for (let c = 3; c > 0; c--) {
+        setCountdown(c);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      setCountdown(null);
+      
+      // Phase 2: Wait for hand to appear
+      setRecordingMessage("Show your hand...");
+      let waitTimeout = 0;
+      while (lastHandsRef.current.length === 0) {
+        await new Promise(r => setTimeout(r, 100));
+        waitTimeout += 100;
+        if (waitTimeout > 10000) throw new Error("Timeout waiting for hand");
+        if (!videoRef.current) throw new Error("Recording interrupted");
+      }
+      
+      // Phase 3: Record for fixed duration
+      setRecordingMessage("Recording your gesture...");
+      recordingStartTimeRef.current = Date.now();
+      
+      while (Date.now() - recordingStartTimeRef.current < RECORDING_DURATION) {
+        const elapsed = Date.now() - recordingStartTimeRef.current;
+        const hands = lastHandsRef.current;
+        
+        // Extract landmarks
+        let leftHand = null;
+        let rightHand = null;
+        
+        if (hands.length > 0) {
+          hands.forEach(hand => {
+            const handData = extractHandLandmarks(hand);
+            if (hand.handedness === 'Left') leftHand = handData;
+            else rightHand = handData;
+          });
+        }
+        
+        // Record frame (even if no hand - DTW handles missing data)
+        recordingFramesRef.current.push({
+          timestamp: elapsed,
+          left_hand: leftHand,
+          right_hand: rightHand
+        });
+        
+        // Update UI
+        const progress = Math.round((elapsed / RECORDING_DURATION) * 100);
+        setRecordingStep(recordingFramesRef.current.length);
+        setRecordingMessage(`Recording... ${progress}% (${recordingFramesRef.current.length} frames)`);
+        
+        await new Promise(r => setTimeout(r, FRAME_INTERVAL));
+        if (!videoRef.current) throw new Error("Recording interrupted");
+      }
+      
+      const frames = recordingFramesRef.current;
+      
+      if (frames.length < 10) {
+        toast.error(`Too few frames captured (${frames.length}).`);
+        return;
+      }
+      
+      // Phase 4: Save to server (no resampling - DTW handles variable length)
+      setRecordingMessage("Saving sequence...");
+      const response = await fetch('http://localhost:3000/api/gestures/sequences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          className: selectedGestureClass,
+          frames: frames,
+          metadata: {
+            fps: 30,
+            duration_ms: RECORDING_DURATION,
+            frame_count: frames.length
+          }
+        })
+      });
+      
+      if (response.ok) {
+        toast.success(`Gesture saved! ${frames.length} frames recorded.`);
+        fetchGestureClasses();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || "Failed to save sequence");
+      }
+      
+    } catch (error: any) {
+      console.error("Recording error:", error);
+      toast.error(error.message || "Recording failed");
+    } finally {
+      setIsRecording(false);
+      setRecordingStep(0);
+      setCountdown(null);
+      setRecordingMessage("");
+      recordingFramesRef.current = [];
+    }
+  };
+
+  // Simple fixed-duration gesture testing
+  const testGestureDetection = async () => {
+    if (!gestureModelInfo?.exists) {
+      toast.error("No trained model found. Please train the model first.");
+      return;
+    }
+
+    setIsTesting(true);
+    testFramesRef.current = [];
+    setTestConfidence(null);
+    setTestDetectedGesture(null);
+    setTestResult(null);
+    
+    // Use 3 seconds for testing (universal test duration)
+    const TEST_DURATION = 3000;
+    const FRAME_INTERVAL = 33;       // ~30fps
+    const CONFIDENCE_THRESHOLD = 0.50;
+    
+    try {
+      // Phase 1: Countdown from 3
+      for (let c = 3; c > 0; c--) {
+        setTestCountdown(c);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      setTestCountdown(null);
+      
+      // Phase 2: Wait for hand to appear
+      setTestMessage("Show your hand...");
+      let waitTimeout = 0;
+      while (lastHandsRef.current.length === 0) {
+        await new Promise(r => setTimeout(r, 100));
+        waitTimeout += 100;
+        if (waitTimeout > 10000) throw new Error("Timeout waiting for hand");
+        if (!videoRef.current) throw new Error("Detection interrupted");
+      }
+      
+      // Phase 3: Record for fixed duration
+      setTestMessage("Recording your gesture...");
+      testStartTimeRef.current = Date.now();
+      
+      while (Date.now() - testStartTimeRef.current < TEST_DURATION) {
+        const elapsed = Date.now() - testStartTimeRef.current;
+        const hands = lastHandsRef.current;
+        
+        // Extract landmarks
+        let leftHand = null;
+        let rightHand = null;
+        
+        if (hands.length > 0) {
+          hands.forEach(hand => {
+            const handData = extractHandLandmarks(hand);
+            if (hand.handedness === 'Left') leftHand = handData;
+            else rightHand = handData;
+          });
+        }
+        
+        // Record frame
+        testFramesRef.current.push({
+          timestamp: elapsed,
+          left_hand: leftHand,
+          right_hand: rightHand
+        });
+        
+        // Update UI
+        const progress = Math.round((elapsed / TEST_DURATION) * 100);
+        setTestDetectedGesture(`Recording... ${progress}%`);
+        
+        await new Promise(r => setTimeout(r, FRAME_INTERVAL));
+        if (!videoRef.current) throw new Error("Detection interrupted");
+      }
+      
+      const recordedFrameCount = testFramesRef.current.length;
+      
+      if (recordedFrameCount < 10) {
+        toast.error(`Too few frames (${recordedFrameCount}).`);
+        return;
+      }
+      
+      // Phase 4: Classify with DTW
+      setTestMessage("Analyzing gesture with DTW...");
+      
+      try {
+        const response = await fetch('http://localhost:3000/api/gestures/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            frames: testFramesRef.current
+          })
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          const confidence = result.confidence || 0;
+          const gesture = result.predicted_class || "Unknown";
+          const allProbs = result.all_probs || {};
+          const detectionTime = Date.now() - testStartTimeRef.current;
+          
+          setTestConfidence(confidence);
+          setTestDetectedGesture(gesture);
+          
+          // Store result with all probabilities
+          setTestResult({
+            gesture: gesture,
+            confidence: confidence,
+            detectionTimeMs: detectionTime,
+            frameCount: recordedFrameCount,
+            allProbabilities: allProbs
+          });
+          
+          if (confidence >= CONFIDENCE_THRESHOLD) {
+            toast.success(`Detected: ${gesture} (${(confidence * 100).toFixed(1)}%)`);
+          } else {
+            toast.warning(`Low confidence: ${gesture} (${(confidence * 100).toFixed(1)}%)`);
+          }
+          
+          // Show result dialog
+          setTimeout(() => setShowTestResultDialog(true), 100);
+          
+        } else {
+          const error = await response.json();
+          toast.error(error.error || "Classification failed");
+        }
+      } catch (error) {
+        console.error("Classification error:", error);
+        toast.error("Failed to classify gesture");
+      }
+      
+    } catch (error: any) {
+      console.error("Test detection error:", error);
+      toast.error(error.message || "Detection failed");
+    } finally {
+      setIsTesting(false);
+      setTestCountdown(null);
+      setTestMessage("");
+      testFramesRef.current = [];
+    }
+  };
+
+  // Legacy recording function for backward compatibility
   const startRecordingSequence = async () => {
     if (!selectedClassId) {
       toast.error("Please select a gesture class first");
@@ -352,7 +826,7 @@ const Training = () => {
     }
     
     const currentClass = movementClasses.find(c => c.id === selectedClassId);
-    const samplesNeeded = (currentClass?.samples || 0) === 0 ? 5 : 1; // 5 initial samples, then 1 at a time
+    const samplesNeeded = (currentClass?.samples || 0) === 0 ? 5 : 1;
 
     setIsRecording(true);
     setRecordingStep(0);
@@ -363,21 +837,18 @@ const Training = () => {
         setRecordingStep(i);
         setRecordingMessage("Get Ready...");
         
-        // Countdown
         for (let c = 3; c > 0; c--) {
           setCountdown(c);
           await new Promise(r => setTimeout(r, 1000));
         }
         setCountdown(null);
         
-        // Wait for hand entry
         setRecordingMessage("Show Gesture!");
         while (lastHandsRef.current.length === 0) {
             await new Promise(r => setTimeout(r, 100));
             if (!videoRef.current) throw new Error("Recording interrupted");
         }
 
-        // Capture landmark data while hand is visible (1.5 seconds)
         setRecordingMessage("Hold Still... Recording!");
         const captureStart = Date.now();
         while (Date.now() - captureStart < 1500) {
@@ -397,7 +868,6 @@ const Training = () => {
         }
       }
       
-      // Update class with recorded features
       setMovementClasses(prev => prev.map(c => {
         if (c.id === selectedClassId) {
           const existingData = c.data || [];
@@ -406,7 +876,7 @@ const Training = () => {
             count: c.count + 1,
             samples: (c.samples || 0) + recordedFeatures.length,
             data: [...existingData, ...recordedFeatures],
-            isTrained: true // Mark as trained since we have data
+            isTrained: true
           };
         }
         return c;
@@ -427,13 +897,107 @@ const Training = () => {
 
   const startTraining = async (isMovement = false) => {
     if (isMovement) {
-        // Keep existing simulation for KNN/Movement for now as we focus on CNN
+        // Train GRU gesture model via server API
+        if (gestureClasses.length < 2) {
+          toast.error("Need at least 2 gesture classes to train");
+          return;
+        }
+        
+        const totalSequences = gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0);
+        if (totalSequences < 10) {
+          toast.error("Need at least 10 sequences total to train. Record more gestures.");
+          return;
+        }
+        
         setIsTraining(true);
-        // ... existing simulation logic ...
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        setMovementClasses(movementClasses.map(c => ({ ...c, isTrained: c.includeInTraining })));
-        setIsTraining(false);
-        toast.success("Movement Model trained!");
+        setTrainingProgress(0);
+        setLossHistory([]);
+        setCurrentEpoch(0);
+        setCurrentPhase(1);
+        setPhaseDescription("Training GRU gesture model...");
+        
+        try {
+          toast.info("Starting GRU gesture model training...");
+          
+          const response = await fetch('http://localhost:3000/api/gestures/train', {
+            method: 'POST',
+          });
+
+          if (!response.ok) throw new Error(response.statusText);
+          if (!response.body) throw new Error("No response body");
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let done = false;
+
+          while (!done) {
+            const { value, done: doneReading } = await reader.read();
+            done = doneReading;
+            const chunkValue = decoder.decode(value, { stream: true });
+            
+            // Parse JSON progress messages
+            const lines = chunkValue.split('\n');
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              try {
+                const data = JSON.parse(line);
+                
+                // Handle epoch progress
+                if (data.epoch !== undefined) {
+                  setCurrentEpoch(data.epoch);
+                  setTotalEpochs(data.total_epochs || 100);
+                  setTrainingProgress(data.progress || (data.epoch / (data.total_epochs || 100)) * 100);
+                  if (data.loss !== undefined) setLoss(data.loss);
+                  // Use val_accuracy for display (more meaningful)
+                  if (data.val_accuracy !== undefined) setAccuracy(data.val_accuracy);
+                  else if (data.accuracy !== undefined) setAccuracy(data.accuracy);
+                  if (data.val_loss !== undefined) {
+                    setLossHistory(prev => [...prev, data.val_loss]);
+                  }
+                  // Update phase description with current epoch info
+                  setPhaseDescription(`Epoch ${data.epoch}/${data.total_epochs || 100} - Loss: ${data.loss?.toFixed(4) || '--'}`);
+                }
+                
+                // Handle training complete
+                if (data.final_val_accuracy !== undefined) {
+                  setAccuracy(data.final_val_accuracy);
+                  setTrainingProgress(100);
+                  toast.success(`Training complete! Accuracy: ${(data.final_val_accuracy * 100).toFixed(1)}%`);
+                }
+                
+                if (data.error) {
+                  toast.error(data.message || "Training error");
+                }
+                
+                // Handle training complete message (avoid duplicate toasts)
+                if (data.message === "Training complete!" && data.final_val_accuracy !== undefined) {
+                  setTrainingProgress(100);
+                  setAccuracy(data.final_val_accuracy);
+                  // Toast is already shown in the final_val_accuracy check above
+                }
+              } catch (e) {
+                // Not JSON - check for completion markers
+                if (line.includes('[TRAINING_COMPLETE]')) {
+                  setTrainingProgress(100);
+                } else if (line.includes('[TRAINING_FAILED]')) {
+                  toast.error("Training failed!");
+                } else {
+                  console.log("Training output:", line);
+                }
+              }
+            }
+          }
+          
+          // Refresh model info AND gesture classes (to update badge status)
+          await fetchGestureClasses();
+          
+        } catch (error) {
+          console.error("Error training gesture model:", error);
+          toast.error("Failed to train gesture model");
+        } finally {
+          setIsTraining(false);
+          setPhaseDescription("");
+        }
         return;
     }
 
@@ -755,28 +1319,52 @@ const Training = () => {
                   <div className="flex items-center gap-3">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                     <div>
-                      <h3 className="font-semibold text-lg">Training in Progress...</h3>
+                      <h3 className="font-semibold text-lg">
+                        {activeTab === 'knn' ? 'Training GRU Model...' : 'Training in Progress...'}
+                      </h3>
                       <p className="text-sm text-muted-foreground">
-                        Phase {currentPhase}: {phaseDescription}
+                        {activeTab === 'knn' 
+                          ? `Epoch ${currentEpoch}/${totalEpochs}` 
+                          : `Phase ${currentPhase}: ${phaseDescription}`
+                        }
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium">mAP50: {mAP50 ? (mAP50 * 100).toFixed(1) : "--"}%</p>
-                    <p className="text-sm text-muted-foreground">mAP50-95: {mAP50_95 ? (mAP50_95 * 100).toFixed(1) : "--"}%</p>
+                    {activeTab === 'knn' ? (
+                      <>
+                        <p className="text-sm font-medium">Accuracy: {accuracy ? (accuracy * 100).toFixed(1) : "--"}%</p>
+                        <p className="text-sm text-muted-foreground">Loss: {loss ? loss.toFixed(4) : "--"}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-medium">mAP50: {mAP50 ? (mAP50 * 100).toFixed(1) : "--"}%</p>
+                        <p className="text-sm text-muted-foreground">mAP50-95: {mAP50_95 ? (mAP50_95 * 100).toFixed(1) : "--"}%</p>
+                      </>
+                    )}
                   </div>
                 </div>
                 
-                {/* Loss Graph Component */}
-                <div className="mb-4">
-                  <LossGraph
-                    lossHistory={lossHistory}
-                    currentEpoch={currentEpoch}
-                    totalEpochs={totalEpochs}
-                    currentPhase={currentPhase}
-                    phaseDescription={phaseDescription}
-                  />
-                </div>
+                {/* Progress Bar for GRU, Loss Graph for CNN */}
+                {activeTab === 'knn' ? (
+                  <div className="space-y-2">
+                    <Progress value={trainingProgress} className="h-3" />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Progress: {trainingProgress.toFixed(1)}%</span>
+                      <span>Epoch {currentEpoch} of {totalEpochs}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-4">
+                    <LossGraph
+                      lossHistory={lossHistory}
+                      currentEpoch={currentEpoch}
+                      totalEpochs={totalEpochs}
+                      currentPhase={currentPhase}
+                      phaseDescription={phaseDescription}
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -924,9 +1512,9 @@ const Training = () => {
                     {/* Target Class Label */}
                     <div className="absolute top-4 right-4 z-30 text-right pointer-events-none">
                       <div className="bg-black/60 backdrop-blur-md text-white px-4 py-2 rounded-lg border border-white/10 shadow-lg">
-                        <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold mb-0.5">Target Class</p>
+                        <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold mb-0.5">Target Gesture</p>
                         <p className="text-xl font-bold text-primary">
-                          {movementClasses.find(c => c.id === selectedClassId)?.name || "None Selected"}
+                          {gestureClasses.find(c => c.name === selectedGestureClass)?.displayName || selectedGestureClass || "None Selected"}
                         </p>
                       </div>
                     </div>
@@ -942,23 +1530,81 @@ const Training = () => {
                               <div className="w-12 h-12 bg-red-500 rounded-full" />
                             </div>
                             <p className="text-white font-medium text-lg">{recordingMessage}</p>
-                            <p className="text-white/70 text-sm">Sample {recordingStep}</p>
+                            <p className="text-white/70 text-sm">{recordingStep > 0 ? `${recordingStep} frames` : ""}</p>
                           </div>
                         )}
                       </div>
                     )}
 
+                    {/* Test Detection Overlay */}
+                    {isTesting && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm z-20">
+                        {testCountdown ? (
+                          <div className="text-6xl font-bold text-white animate-bounce">{testCountdown}</div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="w-16 h-16 rounded-full border-4 border-blue-500 flex items-center justify-center animate-pulse">
+                              <Target className="w-8 h-8 text-blue-400" />
+                            </div>
+                            <p className="text-white font-medium text-lg">{testMessage}</p>
+                            <p className="text-white/70 text-sm">{testFramesRef.current.length} frames captured</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Live Confidence Display (top-right during testing) */}
+                    {isTesting && testConfidence !== null && (
+                      <div className="absolute top-4 left-4 z-30 pointer-events-none">
+                        <div className={`backdrop-blur-md text-white px-4 py-3 rounded-lg border shadow-lg ${
+                          testConfidence >= 0.8 ? 'bg-green-600/80 border-green-400/30' : 'bg-black/60 border-white/10'
+                        }`}>
+                          <p className="text-[10px] text-zinc-300 uppercase tracking-wider font-bold mb-0.5">Detected Gesture</p>
+                          <p className="text-xl font-bold">{testDetectedGesture || "..."}</p>
+                          <p className="text-sm mt-1">Confidence: <span className={`font-bold ${testConfidence >= 0.8 ? 'text-green-300' : 'text-yellow-400'}`}>
+                            {(testConfidence * 100).toFixed(1)}%
+                          </span></p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Controls Overlay */}
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-                      {!isRecording && isWebcamActive && (
-                        <Button 
-                          size="lg" 
-                          className="pointer-events-auto bg-red-600 hover:bg-red-700 text-white rounded-full px-8 py-6 shadow-lg transform hover:scale-105 transition-all"
-                          onClick={startRecordingSequence}
-                        >
-                          <div className="w-4 h-4 bg-white rounded-full mr-2" />
-                          {selectedClassId ? "Record Samples" : "Select Gesture to Record"}
-                        </Button>
+                      {!isRecording && !isTesting && isWebcamActive && (
+                        <div className="flex flex-col items-center gap-3">
+                          {/* Show selected gesture's duration */}
+                          {selectedGestureClass && (() => {
+                            const selectedClass = gestureClasses.find(c => c.name === selectedGestureClass);
+                            const duration = selectedClass?.duration || 2;
+                            return (
+                              <div className="pointer-events-auto flex items-center gap-2 bg-black/70 backdrop-blur-sm rounded-full px-4 py-2">
+                                <span className="text-white text-sm">Recording Duration: <span className="font-bold text-red-400">{duration}s</span></span>
+                              </div>
+                            );
+                          })()}
+                          <div className="flex gap-4">
+                            <Button 
+                              size="lg" 
+                              className="pointer-events-auto bg-red-600 hover:bg-red-700 text-white rounded-full px-8 py-6 shadow-lg transform hover:scale-105 transition-all"
+                              onClick={startGestureRecording}
+                            >
+                              <div className="w-4 h-4 bg-white rounded-full mr-2" />
+                              {selectedGestureClass 
+                                ? `Record ${gestureClasses.find(c => c.name === selectedGestureClass)?.duration || 2}s` 
+                                : "Select Gesture First"}
+                            </Button>
+                            {gestureModelInfo?.exists && (
+                            <Button 
+                              size="lg" 
+                              className="pointer-events-auto bg-blue-600 hover:bg-blue-700 text-white rounded-full px-8 py-6 shadow-lg transform hover:scale-105 transition-all"
+                              onClick={testGestureDetection}
+                            >
+                              <Target className="w-5 h-5 mr-2" />
+                              Test Gesture
+                            </Button>
+                          )}
+                          </div>
+                        </div>
                       )}
                     </div>
 
@@ -1052,55 +1698,67 @@ const Training = () => {
 
                   <TabsContent value="knn" className="flex-1 flex flex-col data-[state=active]:flex">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-medium">Movement Classes</h3>
+                      <h3 className="text-sm font-medium">Gesture Classes (GRU)</h3>
                       <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Add Gesture
                       </Button>
                     </div>
                     
-                    <div className="space-y-3 flex-1 overflow-auto max-h-[300px] pr-2">
-                      {movementClasses.map((cls) => (
-                        <div 
-                          key={cls.id} 
-                          className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${
-                            selectedClassId === cls.id 
-                              ? 'border-primary bg-primary/5' 
-                              : 'border-border hover:bg-muted/50'
-                          }`}
-                          onClick={() => setSelectedClassId(cls.id)}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
-                            <div>
-                              <p className="font-medium text-sm">{cls.name}</p>
-                              <p className="text-xs text-muted-foreground">{cls.samples || 0} frames ({(cls.data?.length || 0)} vectors)</p>
+                    {isLoadingGestures ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : gestureClasses.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <Hand className="w-12 h-12 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">No gesture classes yet</p>
+                        <p className="text-xs text-muted-foreground">Click "Add Gesture" to create one</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 flex-1 overflow-auto max-h-[300px] pr-2">
+                        {gestureClasses.map((cls) => (
+                          <div 
+                            key={cls.id} 
+                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${
+                              selectedGestureClass === cls.name 
+                                ? 'border-primary bg-primary/5' 
+                                : 'border-border hover:bg-muted/50'
+                            }`}
+                            onClick={() => setSelectedGestureClass(cls.name)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
+                              <div>
+                                <p className="font-medium text-sm">{cls.displayName || cls.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {cls.sequenceCount} sequences • {cls.totalFrames} frames
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[10px]">
+                                {cls.isTrained ? "Trained" : "New"}
+                              </Badge>
+                              {cls.sequenceCount < 5 && (
+                                <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                                  Need {5 - cls.sequenceCount} more
+                                </Badge>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[10px]">
-                              {cls.isTrained ? "Trained" : "New"}
-                            </Badge>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleClassTraining(cls.id, true);
-                              }}
-                              title={cls.includeInTraining ? "Exclude from training" : "Include in training"}
-                            >
-                              {cls.includeInTraining ? (
-                                <Eye className="w-4 h-4 text-primary" />
-                              ) : (
-                                <EyeOff className="w-4 h-4 text-muted-foreground" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Model Info */}
+                    {gestureModelInfo?.exists && (
+                      <div className="bg-muted/50 rounded-lg p-3 mb-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Trained Model</p>
+                        <p className="text-sm">Accuracy: {((gestureModelInfo.final_accuracy || 0) * 100).toFixed(1)}%</p>
+                        <p className="text-xs text-muted-foreground">{gestureModelInfo.num_classes} classes • {gestureModelInfo.total_samples} samples</p>
+                      </div>
+                    )}
 
                     <div className="pt-4 border-t border-border mt-auto">
                       <Button 
@@ -1108,22 +1766,22 @@ const Training = () => {
                         size="lg" 
                         variant="secondary"
                         onClick={() => startTraining(true)}
-                        disabled={isTraining || movementClasses.filter(c => c.includeInTraining).length === 0}
+                        disabled={isTraining || gestureClasses.length < 2}
                       >
                         {isTraining && activeTab === 'knn' ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Training KNN...
+                            Training GRU...
                           </>
                         ) : (
                           <>
-                            <Activity className="w-4 h-4 mr-2" />
-                            Train Movement Model
+                            <Brain className="w-4 h-4 mr-2" />
+                            Train Gesture Model
                           </>
                         )}
                       </Button>
                       <p className="text-xs text-muted-foreground text-center mt-2">
-                        {movementClasses.filter(c => c.includeInTraining).length} gestures selected
+                        {gestureClasses.length} classes • {gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0)} total sequences
                       </p>
                     </div>
                   </TabsContent>
@@ -1133,6 +1791,97 @@ const Training = () => {
           </div>
         </>
       )}
+
+      {/* Test Result Dialog */}
+      <Dialog open={showTestResultDialog} onOpenChange={setShowTestResultDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-green-500" />
+              Gesture Detection Complete
+            </DialogTitle>
+            <DialogDescription>
+              AI successfully recognized your gesture
+            </DialogDescription>
+          </DialogHeader>
+          {testResult && (
+            <div className="space-y-4">
+              <div className="bg-primary/10 rounded-lg p-4 text-center">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Detected Gesture</p>
+                <p className="text-2xl font-bold text-primary">{testResult.gesture}</p>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-muted rounded-lg p-3 text-center">
+                  <div className="flex items-center justify-center mb-1">
+                    <Target className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <p className="text-lg font-bold text-green-500">{(testResult.confidence * 100).toFixed(1)}%</p>
+                  <p className="text-[10px] text-muted-foreground uppercase">Confidence</p>
+                </div>
+                
+                <div className="bg-muted rounded-lg p-3 text-center">
+                  <div className="flex items-center justify-center mb-1">
+                    <Timer className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <p className="text-lg font-bold">{(testResult.detectionTimeMs / 1000).toFixed(2)}s</p>
+                  <p className="text-[10px] text-muted-foreground uppercase">Detection Time</p>
+                </div>
+                
+                <div className="bg-muted rounded-lg p-3 text-center">
+                  <div className="flex items-center justify-center mb-1">
+                    <Activity className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <p className="text-lg font-bold">{testResult.frameCount}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase">Frames Used</p>
+                </div>
+              </div>
+
+              <div className="text-sm text-muted-foreground text-center">
+                <p>Detection speed: ~{Math.round(testResult.detectionTimeMs / testResult.frameCount)}ms per frame</p>
+              </div>
+              
+              {/* All Gesture Probabilities */}
+              {testResult.allProbabilities && Object.keys(testResult.allProbabilities).length > 0 && (
+                <div className="mt-4 border-t pt-4">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 text-center">All Predictions</p>
+                  <div className="space-y-2">
+                    {Object.entries(testResult.allProbabilities)
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([gestureName, prob]) => (
+                        <div key={gestureName} className="flex items-center gap-2">
+                          <span className={`text-sm font-medium w-24 truncate ${gestureName === testResult.gesture ? 'text-primary' : 'text-muted-foreground'}`}>
+                            {gestureName}
+                          </span>
+                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all ${gestureName === testResult.gesture ? 'bg-primary' : 'bg-muted-foreground/50'}`}
+                              style={{ width: `${(prob as number) * 100}%` }}
+                            />
+                          </div>
+                          <span className={`text-sm w-14 text-right ${gestureName === testResult.gesture ? 'font-bold text-primary' : 'text-muted-foreground'}`}>
+                            {((prob as number) * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setShowTestResultDialog(false)}>
+              Close
+            </Button>
+            <Button variant="outline" onClick={() => {
+              setShowTestResultDialog(false);
+              testGestureDetection();
+            }}>
+              Test Again
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Class Dialog */}
       <Dialog open={isAddClassOpen} onOpenChange={setIsAddClassOpen}>
@@ -1144,11 +1893,36 @@ const Training = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
-            <Input 
-              placeholder="Enter name..."
-              value={newClassName}
-              onChange={(e) => setNewClassName(e.target.value)}
-            />
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Name</label>
+              <Input 
+                placeholder="Enter name..."
+                value={newClassName}
+                onChange={(e) => setNewClassName(e.target.value)}
+              />
+            </div>
+            {activeTab !== 'cnn' && (
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Recording Duration</label>
+                <div className="flex gap-2">
+                  {[2, 3, 4, 5, 6].map((sec) => (
+                    <button
+                      key={sec}
+                      type="button"
+                      onClick={() => setNewGestureDuration(sec)}
+                      className={`flex-1 py-2 rounded-md text-sm font-medium transition-all border ${
+                        newGestureDuration === sec
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-muted hover:bg-muted/80 border-border'
+                      }`}
+                    >
+                      {sec}s
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5">How long to record each sample of this gesture</p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button 
