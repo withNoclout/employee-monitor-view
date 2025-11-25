@@ -219,3 +219,59 @@ app.post('/api/train', (req, res) => {
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
 });
+
+// Serve model weights statically
+app.use('/models', express.static(path.join(__dirname, 'yolo_workflow', 'runs', 'custom_model', 'weights')));
+
+// Detection endpoint - accepts base64 image, returns detections
+app.post('/api/detect', express.json({ limit: '10mb' }), async (req, res) => {
+    const { image } = req.body; // base64 encoded image
+    
+    if (!image) {
+        return res.status(400).json({ error: 'No image provided' });
+    }
+
+    try {
+        // Save temp image
+        const tempPath = path.join(__dirname, 'uploads', `detect_${Date.now()}.jpg`);
+        const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+        fs.writeFileSync(tempPath, base64Data, 'base64');
+
+        // Run detection script
+        const detectScript = path.join(__dirname, 'yolo_workflow', 'scripts', 'detect.py');
+        
+        const result = await new Promise((resolve, reject) => {
+            const proc = spawn(PYTHON_PATH, [detectScript, tempPath]);
+            let output = '';
+            let error = '';
+            
+            proc.stdout.on('data', (data) => {
+                output += data.toString();
+            });
+            
+            proc.stderr.on('data', (data) => {
+                error += data.toString();
+            });
+            
+            proc.on('close', (code) => {
+                // Clean up temp file
+                try { fs.unlinkSync(tempPath); } catch(e) {}
+                
+                if (code === 0) {
+                    try {
+                        resolve(JSON.parse(output));
+                    } catch(e) {
+                        reject(new Error('Failed to parse detection output'));
+                    }
+                } else {
+                    reject(new Error(error || 'Detection failed'));
+                }
+            });
+        });
+
+        res.json(result);
+    } catch (error) {
+        console.error('Detection error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});

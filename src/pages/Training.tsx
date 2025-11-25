@@ -15,13 +15,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import LossGraph from "@/components/LossGraph";
 
 interface ClassInfo {
   id: string;
   name: string;
   count: number;
+  samples: number;  // Number of landmark samples
   isTrained: boolean;
   includeInTraining: boolean;
+  data?: number[][];  // Array of landmark feature vectors for KNN
 }
 
 const Training = () => {
@@ -33,7 +36,7 @@ const Training = () => {
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [currentEpoch, setCurrentEpoch] = useState(0);
-  const [totalEpochs, setTotalEpochs] = useState(10);
+  const [totalEpochs, setTotalEpochs] = useState(100);
   const [loss, setLoss] = useState<number | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("cnn");
@@ -41,6 +44,13 @@ const Training = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const detectorRef = useRef<handPoseDetection.HandDetector | null>(null);
+
+  // New state for loss graph
+  const [lossHistory, setLossHistory] = useState<number[]>([]);
+  const [currentPhase, setCurrentPhase] = useState(1);
+  const [phaseDescription, setPhaseDescription] = useState("Frozen backbone - training detection head only");
+  const [mAP50, setMAP50] = useState<number | null>(null);
+  const [mAP50_95, setMAP50_95] = useState<number | null>(null);
 
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -72,10 +82,9 @@ const Training = () => {
       return JSON.parse(saved);
     }
     return [
-      { id: "m1", name: "Hand Raise", count: 120, isTrained: true, includeInTraining: true },
-      { id: "m2", name: "Waving", count: 85, isTrained: true, includeInTraining: true },
-      { id: "m3", name: "Idle", count: 200, isTrained: true, includeInTraining: true },
-      { id: "m4", name: "Reaching", count: 45, isTrained: false, includeInTraining: true },
+      { id: "m1", name: "Hand Raise", count: 0, samples: 0, isTrained: false, includeInTraining: true, data: [] },
+      { id: "m2", name: "Thumbs Up", count: 0, samples: 0, isTrained: false, includeInTraining: true, data: [] },
+      { id: "m3", name: "Idle", count: 0, samples: 0, isTrained: false, includeInTraining: true, data: [] },
     ];
   });
 
@@ -190,8 +199,10 @@ const Training = () => {
         id: Math.random().toString(36).substr(2, 9),
         name: normalizedName,
         count: 1,
+        samples: 0,
         isTrained: false, // New class needs training
-        includeInTraining: true
+        includeInTraining: true,
+        data: []
       };
       return [...currentClasses, newClass];
     }
@@ -294,8 +305,10 @@ const Training = () => {
       id: Math.random().toString(36).substr(2, 9),
       name: newClassName,
       count: 0,
+      samples: 0,
       isTrained: false,
-      includeInTraining: true
+      includeInTraining: true,
+      data: []
     };
 
     if (activeTab === 'cnn') {
@@ -322,6 +335,16 @@ const Training = () => {
     }
   };
 
+  // Extract features from hand landmarks (same as Monitor.tsx)
+  const extractFeatures = (hand: handPoseDetection.Hand): number[] => {
+    const wrist = hand.keypoints[0];
+    return hand.keypoints.flatMap(kp => [
+      (kp.x - wrist.x) / 100,
+      (kp.y - wrist.y) / 100,
+      (kp as any).z || 0
+    ]);
+  };
+
   const startRecordingSequence = async () => {
     if (!selectedClassId) {
       toast.error("Please select a gesture class first");
@@ -329,10 +352,11 @@ const Training = () => {
     }
     
     const currentClass = movementClasses.find(c => c.id === selectedClassId);
-    const samplesNeeded = (currentClass?.count || 0) === 0 ? 3 : 1;
+    const samplesNeeded = (currentClass?.samples || 0) === 0 ? 5 : 1; // 5 initial samples, then 1 at a time
 
     setIsRecording(true);
     setRecordingStep(0);
+    const recordedFeatures: number[][] = [];
     
     try {
       for (let i = 1; i <= samplesNeeded; i++) {
@@ -347,20 +371,25 @@ const Training = () => {
         setCountdown(null);
         
         // Wait for hand entry
-        setRecordingMessage("Perform Gesture!");
+        setRecordingMessage("Show Gesture!");
         while (lastHandsRef.current.length === 0) {
             await new Promise(r => setTimeout(r, 100));
             if (!videoRef.current) throw new Error("Recording interrupted");
         }
 
-        // Wait for hand exit (Recording phase)
-        setRecordingMessage("Recording... Remove hand to finish");
-        while (lastHandsRef.current.length > 0) {
-            await new Promise(r => setTimeout(r, 100));
-            if (!videoRef.current) throw new Error("Recording interrupted");
+        // Capture landmark data while hand is visible (1.5 seconds)
+        setRecordingMessage("Hold Still... Recording!");
+        const captureStart = Date.now();
+        while (Date.now() - captureStart < 1500) {
+          if (lastHandsRef.current.length > 0) {
+            const features = extractFeatures(lastHandsRef.current[0]);
+            recordedFeatures.push(features);
+          }
+          await new Promise(r => setTimeout(r, 100));
+          if (!videoRef.current) throw new Error("Recording interrupted");
         }
         
-        toast.success(`Sample ${i}/${samplesNeeded} recorded`);
+        toast.success(`Sample ${i}/${samplesNeeded}: captured ${recordedFeatures.length} frames`);
         
         if (i < samplesNeeded) {
           setRecordingMessage("Next sample starting...");
@@ -368,14 +397,23 @@ const Training = () => {
         }
       }
       
-      // Update count
-      setMovementClasses(prev => prev.map(c => 
-        c.id === selectedClassId ? { ...c, count: c.count + samplesNeeded, isTrained: false } : c
-      ));
-      toast.success("All samples recorded successfully!");
+      // Update class with recorded features
+      setMovementClasses(prev => prev.map(c => {
+        if (c.id === selectedClassId) {
+          const existingData = c.data || [];
+          return { 
+            ...c, 
+            count: c.count + 1,
+            samples: (c.samples || 0) + recordedFeatures.length,
+            data: [...existingData, ...recordedFeatures],
+            isTrained: true // Mark as trained since we have data
+          };
+        }
+        return c;
+      }));
+      toast.success(`Gesture recorded! Total ${recordedFeatures.length} frames captured.`);
     } catch (error) {
       console.error("Recording error:", error);
-      // Only show error if it wasn't a clean unmount/interrupt
       if (videoRef.current) {
         toast.error("Recording failed");
       }
@@ -407,10 +445,16 @@ const Training = () => {
     }
 
     setIsTraining(true);
-    setTrainingProgress(0); // Indeterminate or we can fake progress
+    setTrainingProgress(0);
+    setLossHistory([]);
+    setCurrentEpoch(0);
+    setCurrentPhase(1);
+    setPhaseDescription("Initializing transfer learning...");
+    setMAP50(null);
+    setMAP50_95(null);
     
     try {
-      toast.info("Starting training on server... Check console for logs.");
+      toast.info("Starting training with transfer learning...");
       
       const response = await fetch('http://localhost:3000/api/train', {
         method: 'POST',
@@ -429,13 +473,61 @@ const Training = () => {
         done = doneReading;
         const chunkValue = decoder.decode(value, { stream: true });
         fullOutput += chunkValue;
-        console.log(chunkValue); // Log progress to console
         
-        // Parse Epoch progress from YOLO output
-        // Pattern looks like: "   1/10         0G ..."
-        // We look for "number/number" followed by GPU memory size (e.g. 0G)
+        // Parse JSON progress messages from training script
+        const progressMatches = chunkValue.matchAll(/\[PROGRESS\]({.*?})/g);
+        for (const match of progressMatches) {
+          try {
+            const data = JSON.parse(match[1]);
+            
+            switch (data.type) {
+              case 'train_start':
+                setTotalEpochs(data.total_epochs || 100);
+                toast.info(`Training started: ${data.model}`);
+                break;
+                
+              case 'phase_start':
+                setCurrentPhase(data.phase);
+                setPhaseDescription(data.description);
+                toast.info(`Phase ${data.phase}: ${data.description}`);
+                break;
+                
+              case 'epoch_end':
+                setCurrentEpoch(data.epoch);
+                setTotalEpochs(data.total_epochs);
+                setTrainingProgress(data.progress);
+                setLoss(data.total_loss);
+                // Update loss history for graph
+                if (data.loss_history && data.loss_history.length > 0) {
+                  setLossHistory(data.loss_history);
+                } else if (data.total_loss) {
+                  setLossHistory(prev => [...prev, data.total_loss]);
+                }
+                break;
+                
+              case 'validation':
+                setMAP50(data.mAP50);
+                setMAP50_95(data.mAP50_95);
+                setAccuracy(data.mAP50);
+                break;
+                
+              case 'training_complete':
+                toast.success(data.message || "Training completed successfully!");
+                setTrainingProgress(100);
+                break;
+                
+              case 'error':
+                toast.error(`Training error: ${data.message}`);
+                break;
+            }
+          } catch (e) {
+            // Not JSON, ignore
+          }
+        }
+        
+        // Fallback: Parse Epoch progress from YOLO output (old format)
         const epochMatch = chunkValue.match(/(\d+)\/(\d+)\s+[0-9.]+[GM]/);
-        if (epochMatch) {
+        if (epochMatch && !chunkValue.includes('[PROGRESS]')) {
             const current = parseInt(epochMatch[1]);
             const total = parseInt(epochMatch[2]);
             if (total > 0) {
@@ -446,37 +538,37 @@ const Training = () => {
             }
         }
         
-        // Parse loss values from training output
-        // Pattern: "box_loss   cls_loss   dfl_loss" followed by values like "3.15      6.624      2.725"
+        // Fallback: Parse loss values from training output (old format)
         const lossMatch = chunkValue.match(/(\d+)\/(\d+)\s+[0-9.]+[GM]\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)/);
-        if (lossMatch) {
+        if (lossMatch && !chunkValue.includes('[PROGRESS]')) {
             const boxLoss = parseFloat(lossMatch[3]);
             const clsLoss = parseFloat(lossMatch[4]);
             const dflLoss = parseFloat(lossMatch[5]);
-            // Total loss is sum of all losses
             const totalLoss = boxLoss + clsLoss + dflLoss;
             setLoss(totalLoss);
+            setLossHistory(prev => [...prev, totalLoss]);
         }
         
-        // Parse mAP50 (accuracy) from validation output
-        // Pattern: "all          1          1     0.0357          1     0.0498     0.0249"
-        // mAP50 is the 6th value, mAP50-95 is the 7th
+        // Fallback: Parse mAP50 (old format)
         const mapMatch = chunkValue.match(/all\s+\d+\s+\d+\s+[0-9.]+\s+[0-9.]+\s+([0-9.]+)\s+([0-9.]+)/);
-        if (mapMatch) {
-            const mAP50 = parseFloat(mapMatch[1]);
-            setAccuracy(mAP50); // mAP50 as our accuracy metric
+        if (mapMatch && !chunkValue.includes('[PROGRESS]')) {
+            const mAP50Val = parseFloat(mapMatch[1]);
+            setAccuracy(mAP50Val);
+            setMAP50(mAP50Val);
         }
+        
+        console.log(chunkValue); // Log progress to console
       }
 
-      if (fullOutput.includes('[TRAINING_COMPLETE]')) {
+      if (fullOutput.includes('[TRAINING_COMPLETE]') || fullOutput.includes('training_complete')) {
         toast.success("Training completed successfully!");
         setTrainingProgress(100);
         // Update local state to show classes as trained
         setClasses(classes.map(c => 
           c.includeInTraining ? { ...c, isTrained: true } : c
         ));
-      } else {
-        toast.error("Training failed. Check console for details.");
+      } else if (!fullOutput.includes('error')) {
+        toast.success("Training finished. Check model results.");
       }
 
     } catch (error) {
@@ -664,16 +756,27 @@ const Training = () => {
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                     <div>
                       <h3 className="font-semibold text-lg">Training in Progress...</h3>
-                      <p className="text-sm text-muted-foreground">Epoch {currentEpoch}/{totalEpochs}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Phase {currentPhase}: {phaseDescription}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium">Accuracy: {accuracy ? (accuracy * 100).toFixed(1) : "--"}%</p>
-                    <p className="text-sm text-muted-foreground">Loss: {loss ? loss.toFixed(4) : "--"}</p>
+                    <p className="text-sm font-medium">mAP50: {mAP50 ? (mAP50 * 100).toFixed(1) : "--"}%</p>
+                    <p className="text-sm text-muted-foreground">mAP50-95: {mAP50_95 ? (mAP50_95 * 100).toFixed(1) : "--"}%</p>
                   </div>
                 </div>
-                <Progress value={trainingProgress} className="h-2 mb-2" />
-                <p className="text-xs text-muted-foreground text-right">{Math.round(trainingProgress)}%</p>
+                
+                {/* Loss Graph Component */}
+                <div className="mb-4">
+                  <LossGraph
+                    lossHistory={lossHistory}
+                    currentEpoch={currentEpoch}
+                    totalEpochs={totalEpochs}
+                    currentPhase={currentPhase}
+                    phaseDescription={phaseDescription}
+                  />
+                </div>
               </CardContent>
             </Card>
           )}
@@ -971,7 +1074,7 @@ const Training = () => {
                             <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
                             <div>
                               <p className="font-medium text-sm">{cls.name}</p>
-                              <p className="text-xs text-muted-foreground">{cls.count} samples</p>
+                              <p className="text-xs text-muted-foreground">{cls.samples || 0} frames ({(cls.data?.length || 0)} vectors)</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">

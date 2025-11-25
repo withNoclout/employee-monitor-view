@@ -1,0 +1,15 @@
+[
+  {
+    "image": "capture-1764076333545.png",
+    "annotations": [
+      {
+        "id": "liqajyvpm",
+        "x": 0.38671875,
+        "y": 0.4375,
+        "width": 0.3109375,
+        "height": 0.2270833333333333,
+        "label": "phone"
+      }
+    ]
+  }
+]
