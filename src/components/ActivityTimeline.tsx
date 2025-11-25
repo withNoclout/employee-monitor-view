@@ -12,7 +12,7 @@ export const ActivityTimeline = () => {
   const activities: ActivityItem[] = [
     {
       time: "2 mins ago",
-      title: "Sarah Johnson completed task #247",
+      title: "test test completed task #247",
       type: "success",
       icon: <CheckCircle className="w-4 h-4" />,
     },

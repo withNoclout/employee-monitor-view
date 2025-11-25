@@ -11,7 +11,12 @@ export const QuickActions = () => {
     { icon: <FileText className="w-4 h-4" />, label: "View Logs", variant: "outline" as const, disabled: true },
     { icon: <Settings className="w-4 h-4" />, label: "Settings", variant: "outline" as const, disabled: true },
     { icon: <Bell className="w-4 h-4" />, label: "Alerts", variant: "outline" as const, disabled: true },
-    { icon: <Users className="w-4 h-4" />, label: "Manage Team", variant: "outline" as const, disabled: true },
+    { 
+      icon: <Users className="w-4 h-4" />, 
+      label: "Manage Team", 
+      variant: "outline" as const,
+      onClick: () => navigate("/manage-team")
+    },
     { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", variant: "outline" as const, disabled: true },
     { 
       icon: <Brain className="w-4 h-4" />, 

@@ -37,3 +37,32 @@ Initial setup and rapid development of the NextXO Employee Monitor dashboard, fo
 - **Live Inference**: Connect the `Monitor.tsx` page to a real video feed and run the TF.js model for real-time detection.
 - **KNN Movement Training**: Currently uses a local webcam for training movement/gestures. 
   - *Future Task*: Replace local webcam access with a connection to the IP camera stream for the production environment.
+
+## Session: November 25, 2025
+
+### Achievements
+- **Work Instruction Builder (`BuildWI.tsx`)**:
+  - Implemented a drag-and-drop interface for creating assembly sequences.
+  - Added routine scheduling (Frequency & Time).
+  - Enabled saving of Work Instructions to `localStorage`.
+- **Team Management (`ManageTeam.tsx`)**:
+  - Created a new page to manage teams and assign Work Instructions.
+  - Implemented member management (Add/Remove employees).
+  - Linked team assignments to the Monitor view.
+- **Monitor Page Enhancements (`Monitor.tsx`)**:
+  - **Dynamic Task Loading**: Tasks now automatically populate based on the employee's team assignment.
+  - **AI Integration**: Integrated MediaPipe for hand tracking and prepared the pipeline for custom object detection.
+  - **Interactive Workflow**: Added a "Start Task" sequence with a countdown timer.
+  - **Karaoke-Style Verification**: Implemented a speech-to-text system where spoken words highlight in real-time to verify step completion.
+- **Infrastructure**:
+  - Created `.env` file for IP Camera configuration.
+  - Updated navigation and routing to include new modules.
+
+### Current Status
+- The system now supports a full lifecycle: **Train AI -> Build Instructions -> Assign to Team -> Monitor Execution**.
+- The Monitor page features a sophisticated interactive overlay for guiding employees through tasks.
+
+### Next Steps
+- **Backend Integration**: Move from `localStorage` to a real database for Teams and Work Instructions.
+- **Real Model Inference**: Connect the custom object detection model to the Monitor page's visualization.
+- **Reporting**: Implement the "Export Report" functionality in Quick Actions.

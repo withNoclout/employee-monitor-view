@@ -9,7 +9,7 @@ const Index = () => {
   const employees = [
     {
       id: "emp-001",
-      name: "Sarah Johnson",
+      name: "test test",
       position: "Senior Developer",
       performanceScore: 95,
       status: "excellent" as const,

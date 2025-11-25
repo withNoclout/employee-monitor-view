@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Monitor from "./pages/Monitor";
 import Training from "./pages/Training";
 import BuildWI from "./pages/BuildWI";
+import ManageTeam from "./pages/ManageTeam";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ const App = () => (
           <Route path="/monitor/:id" element={<Monitor />} />
           <Route path="/training" element={<Training />} />
           <Route path="/build-wi" element={<BuildWI />} />
+          <Route path="/manage-team" element={<ManageTeam />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

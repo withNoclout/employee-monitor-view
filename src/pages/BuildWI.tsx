@@ -52,6 +52,13 @@ const BuildWI = () => {
   const [steps, setSteps] = useState<WIStep[]>([]);
   const [wiTitle, setWiTitle] = useState("New Work Instruction");
   
+  // Routine State
+  const [frequency, setFrequency] = useState("Daily");
+  const [scheduledTime, setScheduledTime] = useState(() => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  });
+  
   // Verification State
   const [verificationText, setVerificationText] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -128,8 +135,21 @@ const BuildWI = () => {
       toast.error("Please add at least one step");
       return;
     }
-    // Save logic here (e.g., to localStorage or backend)
-    console.log("Saving WI:", { title: wiTitle, steps, verificationText });
+    
+    const newWI = {
+      id: Math.random().toString(36).substr(2, 9),
+      title: wiTitle,
+      frequency,
+      scheduledTime,
+      steps,
+      verificationText,
+      createdAt: new Date().toISOString()
+    };
+
+    const existingWIs = JSON.parse(localStorage.getItem('saved_work_instructions') || '[]');
+    localStorage.setItem('saved_work_instructions', JSON.stringify([...existingWIs, newWI]));
+    
+    console.log("Saving WI:", newWI);
     toast.success("Work Instruction saved successfully!");
   };
 
@@ -231,12 +251,42 @@ const BuildWI = () => {
                   Add Step
                 </Button>
               </div>
-              <Input 
-                value={wiTitle} 
-                onChange={(e) => setWiTitle(e.target.value)}
-                className="text-lg font-semibold mt-2"
-                placeholder="Instruction Title"
-              />
+              <div className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-muted-foreground">Instruction Title</label>
+                  <Input 
+                    value={wiTitle} 
+                    onChange={(e) => setWiTitle(e.target.value)}
+                    className="text-lg font-semibold"
+                    placeholder="Instruction Title"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-muted-foreground">Frequency</label>
+                    <Select value={frequency} onValueChange={setFrequency}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select frequency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Daily">Daily</SelectItem>
+                        <SelectItem value="Weekly">Weekly</SelectItem>
+                        <SelectItem value="Monthly">Monthly</SelectItem>
+                        <SelectItem value="Shift">Per Shift</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-muted-foreground">Scheduled Time</label>
+                    <Input 
+                      type="time" 
+                      value={scheduledTime} 
+                      onChange={(e) => setScheduledTime(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardContent 
               className="flex-1 bg-muted/10 p-6 transition-colors data-[drag-active=true]:bg-primary/5"
