@@ -1,0 +1,15 @@
+[
+  {
+    "image": "capture-1764072901765.png",
+    "annotations": [
+      {
+        "id": "6jt5fsbsy",
+        "x": 0.52578125,
+        "y": 0.5125,
+        "width": 0.05625000000000002,
+        "height": 0.0625,
+        "label": "ear bud"
+      }
+    ]
+  }
+]

@@ -1,13 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity } from "lucide-react";
+import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { ImageAnnotator } from "@/components/ImageAnnotator";
 import { toast } from "sonner";
 import * as tf from '@tensorflow/tfjs';
 import * as handPoseDetection from '@tensorflow-models/hand-pose-detection';
+import * as mobilenet from '@tensorflow-models/mobilenet';
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -78,6 +79,44 @@ const Training = () => {
     ];
   });
 
+  const [mobilenetModel, setMobilenetModel] = useState<mobilenet.MobileNet | null>(null);
+  const [trainingData, setTrainingData] = useState<{ embedding: tf.Tensor; label: string }[]>([]);
+
+  useEffect(() => {
+    const fetchClasses = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/api/classes');
+        if (response.ok) {
+          const serverClasses = await response.json();
+          setClasses(prevClasses => {
+             return serverClasses.map((sc: any) => {
+                 const existing = prevClasses.find(pc => pc.name === sc.name);
+                 return {
+                     ...sc,
+                     isTrained: existing ? existing.isTrained : sc.isTrained,
+                     includeInTraining: existing ? existing.includeInTraining : sc.includeInTraining
+                 };
+             });
+          });
+        }
+      } catch (error) {
+        console.error("Failed to fetch classes from server:", error);
+      }
+    };
+    
+    fetchClasses();
+  }, []);
+
+  useEffect(() => {
+    const loadMobileNet = async () => {
+      const model = await mobilenet.load();
+      setMobilenetModel(model);
+      console.log("MobileNet loaded");
+    };
+    loadMobileNet();
+    loadModel();
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('training_classes', JSON.stringify(classes));
   }, [classes]);
@@ -131,33 +170,121 @@ const Training = () => {
     }
   };
 
-  const handleSaveDataset = (data: any) => {
-    console.log("Saving dataset:", data);
+  const updateClassForNewSample = (className: string, currentClasses: ClassInfo[]) => {
+    // Normalize class name to avoid duplicates (case-insensitive)
+    const normalizedName = className.trim();
+    const existingClassIndex = currentClasses.findIndex(c => c.name.toLowerCase() === normalizedName.toLowerCase());
     
-    // Update classes based on new annotations
-    const newClasses = [...classes];
-    data.forEach((item: any) => {
-      item.annotations.forEach((ann: any) => {
-        const existingClass = newClasses.find(c => c.name === ann.label);
-        if (existingClass) {
-          existingClass.count++;
-          existingClass.isTrained = false; // New data needs training
-        } else {
-          newClasses.push({
-            id: Math.random().toString(36).substr(2, 9),
-            name: ann.label,
-            count: 1,
-            isTrained: false,
-            includeInTraining: true
-          });
-        }
-      });
-    });
-    setClasses(newClasses);
+    if (existingClassIndex >= 0) {
+      // Update existing class
+      const updatedClasses = [...currentClasses];
+      updatedClasses[existingClassIndex] = {
+        ...updatedClasses[existingClassIndex],
+        count: updatedClasses[existingClassIndex].count + 1,
+        isTrained: false // Mark as needing training
+      };
+      return updatedClasses;
+    } else {
+      // Add new class
+      const newClass: ClassInfo = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: normalizedName,
+        count: 1,
+        isTrained: false, // New class needs training
+        includeInTraining: true
+      };
+      return [...currentClasses, newClass];
+    }
+  };
 
-    toast.success("Dataset updated successfully!");
-    setIsAnnotating(false);
-    setUploadedImages([]);
+  const handleSaveDataset = async (data: any) => {
+    if (!mobilenetModel) {
+      toast.error("MobileNet not loaded yet");
+      return;
+    }
+
+    console.log("Processing dataset:", data);
+    const newTrainingData: { embedding: tf.Tensor; label: string }[] = [];
+    let newClasses = [...classes];
+    
+    setIsTraining(true); // Show loading state while processing
+
+    try {
+      for (const item of data) {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        
+        // Use the File object if available to create a URL, otherwise fallback to image name (which will likely fail)
+        const imgSrc = item.file ? URL.createObjectURL(item.file) : item.image;
+        img.src = imgSrc;
+
+        await new Promise((resolve, reject) => { 
+          img.onload = resolve; 
+          img.onerror = (e) => reject(new Error(`Failed to load image: ${item.image}`));
+        });
+        
+        for (const ann of item.annotations) {
+          // Crop and Infer
+          try {
+            const embedding = tf.tidy(() => {
+              const pixels = tf.browser.fromPixels(img);
+              
+              // Calculate dimensions with clamping
+              let x = Math.floor(ann.x * img.width);
+              let y = Math.floor(ann.y * img.height);
+              let w = Math.floor(ann.width * img.width);
+              let h = Math.floor(ann.height * img.height);
+              
+              // Clamp to image boundaries
+              x = Math.max(0, x);
+              y = Math.max(0, y);
+              w = Math.min(w, img.width - x);
+              h = Math.min(h, img.height - y);
+              
+              // Ensure valid dimensions
+              if (w <= 0 || h <= 0) {
+                  console.warn("Invalid crop dimensions after clamping:", { x, y, w, h });
+                  return null;
+              }
+              
+              const cropped = tf.slice(pixels, [y, x, 0], [h, w, 3]);
+              // Resize to 224x224 as expected by MobileNet
+              const resized = tf.image.resizeBilinear(cropped, [224, 224]);
+              return mobilenetModel.infer(resized, true);
+            });
+
+            if (embedding) {
+              newTrainingData.push({ embedding, label: ann.label });
+              newClasses = updateClassForNewSample(ann.label, newClasses);
+            }
+          } catch (innerError) {
+            console.error(`Error processing annotation ${ann.label}:`, innerError);
+            // Continue to next annotation
+          }
+        }
+        
+        // Clean up object URL
+        if (item.file) {
+            URL.revokeObjectURL(imgSrc);
+        }
+      }
+
+      setTrainingData(prev => [...prev, ...newTrainingData]);
+      setClasses(newClasses);
+      
+      if (newTrainingData.length > 0) {
+        toast.success(`Processed ${newTrainingData.length} new samples! Model needs retraining.`);
+      } else {
+        toast.warning("No valid samples processed. Check console for details.");
+      }
+    } catch (error: any) {
+      console.error("Error processing dataset:", error);
+      toast.error(`Failed to process images: ${error.message || error}`);
+    } finally {
+      setIsTraining(false);
+      setIsAnnotating(false);
+      setUploadedImages([]);
+    }
   };
 
   const handleAddClass = () => {
@@ -261,63 +388,100 @@ const Training = () => {
   };
 
   const startTraining = async (isMovement = false) => {
-    if (!model && !isMovement) return; // KNN might not use the same tf model object
-    
-    const targetClasses = isMovement ? movementClasses : classes;
-    const activeClasses = targetClasses.filter(c => c.includeInTraining);
-    
+    if (isMovement) {
+        // Keep existing simulation for KNN/Movement for now as we focus on CNN
+        setIsTraining(true);
+        // ... existing simulation logic ...
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        setMovementClasses(movementClasses.map(c => ({ ...c, isTrained: c.includeInTraining })));
+        setIsTraining(false);
+        toast.success("Movement Model trained!");
+        return;
+    }
+
+    // Check if we have classes to train
+    const activeClasses = classes.filter(c => c.includeInTraining);
     if (activeClasses.length === 0) {
-      toast.error("Please select at least one class to train");
+      toast.error("Please select at least one class to train.");
       return;
     }
 
     setIsTraining(true);
-    setTrainingProgress(0);
-    setCurrentEpoch(0);
-    setLoss(null);
-    setAccuracy(null);
-
+    setTrainingProgress(0); // Indeterminate or we can fake progress
+    
     try {
-      // Simulate training process
-      const totalSteps = totalEpochs * 10;
+      toast.info("Starting training on server... Check console for logs.");
       
-      for (let epoch = 1; epoch <= totalEpochs; epoch++) {
-        setCurrentEpoch(epoch);
+      const response = await fetch('http://localhost:3000/api/train', {
+        method: 'POST',
+      });
+
+      if (!response.ok) throw new Error(response.statusText);
+      if (!response.body) throw new Error("No response body");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let fullOutput = "";
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        const chunkValue = decoder.decode(value, { stream: true });
+        fullOutput += chunkValue;
+        console.log(chunkValue); // Log progress to console
         
-        // Simulate batches
-        for (let batch = 0; batch < 10; batch++) {
-          await new Promise(resolve => setTimeout(resolve, isMovement ? 150 : 200)); // KNN might be faster
-          const progress = ((epoch - 1) * 10 + batch + 1) / totalSteps * 100;
-          setTrainingProgress(progress);
+        // Parse Epoch progress from YOLO output
+        // Pattern looks like: "   1/10         0G ..."
+        // We look for "number/number" followed by GPU memory size (e.g. 0G)
+        const epochMatch = chunkValue.match(/(\d+)\/(\d+)\s+[0-9.]+[GM]/);
+        if (epochMatch) {
+            const current = parseInt(epochMatch[1]);
+            const total = parseInt(epochMatch[2]);
+            if (total > 0) {
+                const percent = Math.round((current / total) * 100);
+                setTrainingProgress(percent);
+                setCurrentEpoch(current);
+                setTotalEpochs(total);
+            }
         }
-
-        // Simulate metrics update
-        setLoss(Math.max(0.1, 2.0 - (epoch * 0.15) + (Math.random() * 0.1)));
-        setAccuracy(Math.min(0.99, 0.4 + (epoch * 0.05) + (Math.random() * 0.05)));
+        
+        // Parse loss values from training output
+        // Pattern: "box_loss   cls_loss   dfl_loss" followed by values like "3.15      6.624      2.725"
+        const lossMatch = chunkValue.match(/(\d+)\/(\d+)\s+[0-9.]+[GM]\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)/);
+        if (lossMatch) {
+            const boxLoss = parseFloat(lossMatch[3]);
+            const clsLoss = parseFloat(lossMatch[4]);
+            const dflLoss = parseFloat(lossMatch[5]);
+            // Total loss is sum of all losses
+            const totalLoss = boxLoss + clsLoss + dflLoss;
+            setLoss(totalLoss);
+        }
+        
+        // Parse mAP50 (accuracy) from validation output
+        // Pattern: "all          1          1     0.0357          1     0.0498     0.0249"
+        // mAP50 is the 6th value, mAP50-95 is the 7th
+        const mapMatch = chunkValue.match(/all\s+\d+\s+\d+\s+[0-9.]+\s+[0-9.]+\s+([0-9.]+)\s+([0-9.]+)/);
+        if (mapMatch) {
+            const mAP50 = parseFloat(mapMatch[1]);
+            setAccuracy(mAP50); // mAP50 as our accuracy metric
+        }
       }
 
-      if (!isMovement && model) {
-        await model.save('indexeddb://my-model');
-      }
-      
-      // Update class status
-      if (isMovement) {
-        setMovementClasses(movementClasses.map(c => ({
-          ...c,
-          isTrained: c.includeInTraining
-        })));
-        toast.success("KNN Movement Model trained successfully!");
+      if (fullOutput.includes('[TRAINING_COMPLETE]')) {
+        toast.success("Training completed successfully!");
+        setTrainingProgress(100);
+        // Update local state to show classes as trained
+        setClasses(classes.map(c => 
+          c.includeInTraining ? { ...c, isTrained: true } : c
+        ));
       } else {
-        setClasses(classes.map(c => ({
-          ...c,
-          isTrained: c.includeInTraining
-        })));
-        toast.success("CNN Object Detection Model trained successfully!");
+        toast.error("Training failed. Check console for details.");
       }
 
     } catch (error) {
-      console.error("Training error:", error);
-      toast.error("Training failed");
+      console.error("Error calling training API:", error);
+      toast.error("Failed to communicate with training server.");
     } finally {
       setIsTraining(false);
     }
@@ -399,6 +563,54 @@ const Training = () => {
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
   }, [activeTab, isAnnotating]);
+
+  const [cnnInputMode, setCnnInputMode] = useState<'upload' | 'camera'>('upload');
+  const cnnVideoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+
+    const startCnnWebcam = async () => {
+      if (activeTab === 'cnn' && cnnInputMode === 'camera' && !isAnnotating) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          if (cnnVideoRef.current) {
+            cnnVideoRef.current.srcObject = stream;
+          }
+        } catch (err) {
+          console.error("Error accessing webcam:", err);
+          toast.error("Could not access webcam");
+        }
+      }
+    };
+
+    startCnnWebcam();
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [activeTab, cnnInputMode, isAnnotating]);
+
+  const captureCnnImage = () => {
+    if (cnnVideoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = cnnVideoRef.current.videoWidth;
+      canvas.height = cnnVideoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(cnnVideoRef.current, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], `capture-${Date.now()}.png`, { type: "image/png" });
+            setUploadedImages([file]);
+            setIsAnnotating(true);
+          }
+        }, 'image/png');
+      }
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -523,30 +735,74 @@ const Training = () => {
             {/* Upload Section (CNN) or Camera (KNN) */}
             <Card className="lg:col-span-2">
               <CardHeader>
-                <CardTitle>{activeTab === 'cnn' ? "Upload New Samples" : "Live Camera Feed"}</CardTitle>
-                <CardDescription>
-                  {activeTab === 'cnn' 
-                    ? "Select multiple images from a folder to start labeling" 
-                    : "Use your camera to capture movement gestures for training"}
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>{activeTab === 'cnn' ? "Add New Samples" : "Live Camera Feed"}</CardTitle>
+                    <CardDescription>
+                      {activeTab === 'cnn' 
+                        ? "Upload images or capture from webcam to label" 
+                        : "Use your camera to capture movement gestures for training"}
+                    </CardDescription>
+                  </div>
+                  {activeTab === 'cnn' && (
+                    <div className="flex items-center bg-muted rounded-lg p-1">
+                      <Button
+                        variant={cnnInputMode === 'upload' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        onClick={() => setCnnInputMode('upload')}
+                        className="h-7"
+                      >
+                        <Upload className="w-3 h-3 mr-2" />
+                        Upload
+                      </Button>
+                      <Button
+                        variant={cnnInputMode === 'camera' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        onClick={() => setCnnInputMode('camera')}
+                        className="h-7"
+                      >
+                        <Camera className="w-3 h-3 mr-2" />
+                        Camera
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {activeTab === 'cnn' ? (
-                  <div className="border-2 border-dashed border-border rounded-xl p-12 flex flex-col items-center justify-center text-center hover:bg-muted/50 transition-colors relative">
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      onChange={handleFileSelect}
-                    />
-                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 pointer-events-none">
-                      <Upload className="w-8 h-8 text-primary" />
+                  cnnInputMode === 'upload' ? (
+                    <div className="border-2 border-dashed border-border rounded-xl p-12 flex flex-col items-center justify-center text-center hover:bg-muted/50 transition-colors relative">
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        onChange={handleFileSelect}
+                      />
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 pointer-events-none">
+                        <Upload className="w-8 h-8 text-primary" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2 pointer-events-none">Drop images here or click to browse</h3>
+                      <p className="text-muted-foreground mb-6 pointer-events-none">Support for JPG, PNG, WEBP</p>
+                      <Button className="pointer-events-none">Select Files</Button>
                     </div>
-                    <h3 className="text-lg font-semibold mb-2 pointer-events-none">Drop images here or click to browse</h3>
-                    <p className="text-muted-foreground mb-6 pointer-events-none">Support for JPG, PNG, WEBP</p>
-                    <Button className="pointer-events-none">Select Files</Button>
-                  </div>
+                  ) : (
+                    <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-border">
+                      <video 
+                        ref={cnnVideoRef} 
+                        autoPlay 
+                        playsInline 
+                        muted 
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute bottom-4 left-0 right-0 flex justify-center z-10">
+                        <Button onClick={captureCnnImage} size="lg" className="rounded-full shadow-lg">
+                          <Camera className="w-5 h-5 mr-2" />
+                          Capture & Label
+                        </Button>
+                      </div>
+                    </div>
+                  )
                 ) : (
                   <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-border group">
                     <video 

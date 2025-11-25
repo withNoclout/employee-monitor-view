@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import * as tf from '@tensorflow/tfjs';
 import * as handPoseDetection from '@tensorflow-models/hand-pose-detection';
+import * as mobilenet from '@tensorflow-models/mobilenet';
 
 // Mock employee data
 const employeeData: Record<string, { name: string; position: string; status: string }> = {
@@ -43,6 +44,9 @@ const Monitor = () => {
   // AI & Workflow State
   const [detector, setDetector] = useState<handPoseDetection.HandDetector | null>(null);
   const [customModel, setCustomModel] = useState<tf.LayersModel | null>(null);
+  const [mobilenetModel, setMobilenetModel] = useState<mobilenet.MobileNet | null>(null);
+  const [modelClasses, setModelClasses] = useState<string[]>([]);
+  const [prediction, setPrediction] = useState<{ label: string; score: number } | null>(null);
   const [isTaskActive, setIsTaskActive] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -73,6 +77,17 @@ const Monitor = () => {
           console.log("Custom model loaded");
         } catch (e) {
           console.log("No custom model found in IndexedDB");
+        }
+
+        // Load MobileNet
+        const mbModel = await mobilenet.load();
+        setMobilenetModel(mbModel);
+        console.log("MobileNet loaded");
+
+        // Load Classes
+        const savedClasses = localStorage.getItem('model_classes');
+        if (savedClasses) {
+          setModelClasses(JSON.parse(savedClasses));
         }
       } catch (err) {
         console.error("Error loading models:", err);
@@ -111,15 +126,47 @@ const Monitor = () => {
             });
           });
 
-          // 2. Custom Model Prediction (Simulated visualization if model exists)
-          if (customModel) {
-            // In a real app, we would process the image tensor here
-            // For visualization, we'll draw a mock bounding box to show "AI is active"
-            ctx.strokeStyle = '#00aaff';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(50, 50, 100, 100);
-            ctx.fillStyle = '#00aaff';
-            ctx.fillText("Component Detection Active", 50, 45);
+          // 2. Custom Model Prediction
+          if (customModel && mobilenetModel && modelClasses.length > 0) {
+            const embedding = tf.tidy(() => {
+               return mobilenetModel.infer(video, true);
+            });
+            
+            const result = customModel.predict(embedding) as tf.Tensor;
+            const predictions = await result.data();
+            embedding.dispose();
+            result.dispose();
+
+            let maxScore = -1;
+            let maxIndex = -1;
+            for (let i = 0; i < predictions.length; i++) {
+              if (predictions[i] > maxScore) {
+                maxScore = predictions[i];
+                maxIndex = i;
+              }
+            }
+
+            if (maxScore > 0.85) {
+              const label = modelClasses[maxIndex];
+              
+              ctx.font = "bold 24px Arial";
+              ctx.fillStyle = "#00ff00";
+              ctx.fillText(`${label}: ${(maxScore * 100).toFixed(1)}%`, 20, 50);
+              
+              ctx.strokeStyle = "#00ff00";
+              ctx.lineWidth = 4;
+              ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+            }
+          }
+
+          // 3. MobileNet Prediction (if model is loaded)
+          if (mobilenetModel) {
+            const predictions = await mobilenetModel.classify(video);
+            setPrediction(predictions[0]);
+            // Draw the top prediction on the canvas
+            ctx.fillStyle = '#ff0000';
+            ctx.font = '20px Arial';
+            ctx.fillText(`${predictions[0].className}: ${Math.round(predictions[0].probability * 100)}%`, 10, 50);
           }
         }
       }
@@ -128,7 +175,7 @@ const Monitor = () => {
 
     detect();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isLive, detector, customModel]);
+  }, [isLive, detector, customModel, mobilenetModel]);
 
   // Speech Recognition Setup
   useEffect(() => {

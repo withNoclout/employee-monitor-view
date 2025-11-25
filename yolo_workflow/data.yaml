@@ -1,0 +1,14 @@
+names:
+- Motherboard
+- CPU
+- RAM
+- GPU
+- Power Supply
+- phone
+- pen
+- snack
+- ear
+nc: 9
+path: /home/noclout/employee-monitor-view/yolo_workflow/processed_data
+train: train/images
+val: val/images

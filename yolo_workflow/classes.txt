@@ -1,0 +1,9 @@
+Motherboard
+CPU
+RAM
+GPU
+Power Supply
+phone
+pen
+snack
+ear

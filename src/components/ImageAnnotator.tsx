@@ -132,6 +132,13 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
         annotations: annotations[idx] || []
       }));
 
+      // Create data for parent component including the File object
+      const onSaveData = images.map((file, idx) => ({
+        image: file.name,
+        file: file,
+        annotations: annotations[idx] || []
+      }));
+
       // Add main JSON file
       datasetFolder?.file("annotations.json", JSON.stringify(datasetData, null, 2));
 
@@ -185,7 +192,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
         window.URL.revokeObjectURL(url);
       }
 
-      onSave(datasetData);
+      onSave(onSaveData);
     } catch (error) {
       console.error("Error creating zip:", error);
     } finally {
