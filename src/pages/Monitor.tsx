@@ -119,10 +119,20 @@ const Monitor = () => {
   const isListeningRef = useRef(false); // Track listening state for callbacks;
   
   // DTW Gesture Sequence Collection
-  const gestureFramesRef = useRef<number[][]>([]); // Collect frames for DTW
+  const gestureFramesRef = useRef<any[]>([]); // Collect frames for DTW (same format as Training.tsx)
   const lastGestureApiCall = useRef<number>(0);
   const GESTURE_API_INTERVAL = 500; // Call DTW API every 500ms
   const MIN_FRAMES_FOR_DTW = 10; // Minimum frames before calling API
+  const gestureStartTimeRef = useRef<number>(0);
+  
+  // Test Gesture State
+  const [isTestingGesture, setIsTestingGesture] = useState(false);
+  const [testGestureCountdown, setTestGestureCountdown] = useState<number | null>(null);
+  const [testGestureResult, setTestGestureResult] = useState<string | null>(null);
+  const [testMessage, setTestMessage] = useState<string | null>(null);
+  const testGestureFramesRef = useRef<any[]>([]); // Same format as Training.tsx
+  const testStartTimeRef = useRef<number>(0);
+  const lastHandsRef = useRef<handPoseDetection.Hand[]>([]); // Store last detected hands
   
   // Confidence threshold for locking gesture/component
   const LOCK_CONFIDENCE = 0.7; // 70% confidence to lock in
@@ -428,28 +438,154 @@ const Monitor = () => {
     return { gesture: bestGesture, confidence };
   }, [trainedGestures]);
 
-  // Classify gesture using DTW Server API (same as training/test)
-  const classifyGestureDTW = useCallback(async (frames: number[][]): Promise<{ gesture: string; confidence: number } | null> => {
+  // Extract hand landmarks in normalized format (same as Training.tsx)
+  const extractHandLandmarks = useCallback((hand: handPoseDetection.Hand | null): { landmarks: number[][] } | null => {
+    if (!hand || !hand.keypoints || hand.keypoints.length < 21) return null;
+    
+    const wrist = hand.keypoints[0];
+    const landmarks = hand.keypoints.map(kp => [
+      (kp.x - wrist.x) / 100,  // Normalize relative to wrist
+      (kp.y - wrist.y) / 100,
+      (kp as any).z || 0
+    ]);
+    
+    return { landmarks };
+  }, []);
+
+  // Classify gesture using DTW Server API (same format as Training.tsx)
+  const classifyGestureDTW = useCallback(async (frames: any[]): Promise<{ gesture: string; confidence: number } | null> => {
     if (frames.length < MIN_FRAMES_FOR_DTW) return null;
+    
+    // Debug: Log what we're sending
+    console.log('[DTW] Sending frames count:', frames.length);
+    if (frames.length > 0) {
+      console.log('[DTW] First frame:', JSON.stringify(frames[0]));
+    }
     
     try {
       const response = await fetch('http://localhost:3000/api/gestures/classify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ frames })
+        body: JSON.stringify({ frames })  // Already in correct format: {timestamp, left_hand, right_hand}
       });
       
       if (response.ok) {
         const result = await response.json();
-        if (result.prediction && result.confidence) {
-          return { gesture: result.prediction, confidence: result.confidence };
+        console.log('[DTW] Server response:', result);
+        if (result.predicted_class && result.confidence !== undefined) {
+          return { gesture: result.predicted_class, confidence: result.confidence };
         }
+      } else {
+        const errorText = await response.text();
+        console.error('[DTW] Server error:', response.status, errorText);
       }
     } catch (err) {
       console.error('[DTW] Classification error:', err);
     }
     return null;
   }, []);
+
+  // Test Gesture function - exactly like Training.tsx
+  const startTestGesture = async () => {
+    if (isTestingGesture || !detector) return;
+    
+    setIsTestingGesture(true);
+    setTestGestureResult(null);
+    testGestureFramesRef.current = [];
+    
+    const TEST_DURATION = 3000; // 3 seconds recording
+    const FRAME_INTERVAL = 33;  // ~30fps
+    
+    try {
+      // Phase 1: Countdown from 3
+      for (let c = 3; c > 0; c--) {
+        setTestGestureCountdown(c);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      setTestGestureCountdown(0);
+      
+      // Phase 2: Wait for hand to appear (max 10 seconds)
+      setTestMessage("Show your hand...");
+      let waitTimeout = 0;
+      while (lastHandsRef.current.length === 0) {
+        await new Promise(r => setTimeout(r, 100));
+        waitTimeout += 100;
+        if (waitTimeout > 10000) throw new Error("Timeout waiting for hand");
+        if (!videoRef.current) throw new Error("Camera stopped");
+      }
+      
+      // Phase 3: Record for fixed duration
+      setTestMessage("Recording your gesture...");
+      testStartTimeRef.current = Date.now();
+      
+      while (Date.now() - testStartTimeRef.current < TEST_DURATION) {
+        const elapsed = Date.now() - testStartTimeRef.current;
+        const hands = lastHandsRef.current;
+        
+        // Extract landmarks in same format as Training.tsx
+        let leftHand = null;
+        let rightHand = null;
+        
+        if (hands.length > 0) {
+          hands.forEach(hand => {
+            const handData = extractHandLandmarks(hand);
+            if (hand.handedness === 'Left') leftHand = handData;
+            else rightHand = handData;
+          });
+        }
+        
+        // Record frame (same format as Training.tsx)
+        testGestureFramesRef.current.push({
+          timestamp: elapsed,
+          left_hand: leftHand,
+          right_hand: rightHand
+        });
+        
+        // Update progress
+        const progress = Math.round((elapsed / TEST_DURATION) * 100);
+        setTestMessage(`Recording... ${progress}%`);
+        
+        await new Promise(r => setTimeout(r, FRAME_INTERVAL));
+        if (!videoRef.current) throw new Error("Camera stopped");
+      }
+      
+      const recordedFrameCount = testGestureFramesRef.current.length;
+      console.log(`[Test] Recorded ${recordedFrameCount} frames`);
+      console.log(`[Test] Sample frame:`, testGestureFramesRef.current[0]);
+      
+      if (recordedFrameCount < 10) {
+        setTestGestureResult(`Too few frames (${recordedFrameCount}). Keep hand visible.`);
+        toast.error("Not enough hand data. Keep your hand visible.");
+        return;
+      }
+      
+      // Phase 4: Classify with DTW
+      setTestMessage("Analyzing gesture with DTW...");
+      console.log(`[Test] Calling classifyGestureDTW with ${recordedFrameCount} frames...`);
+      
+      const result = await classifyGestureDTW(testGestureFramesRef.current);
+      console.log(`[Test] DTW result:`, result);
+      
+      if (result) {
+        setTestGestureResult(`${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+        setCurrentGesture(result.gesture);
+        toast.success(`Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+      } else {
+        setTestGestureResult("No gesture detected");
+        toast.error("No gesture detected. Try again.");
+      }
+      
+    } catch (err: any) {
+      console.error('[Test] Error:', err);
+      setTestGestureResult(`Error: ${err.message}`);
+      toast.error(err.message);
+    } finally {
+      setIsTestingGesture(false);
+      setTestGestureCountdown(null);
+      setTestMessage(null);
+      testGestureFramesRef.current = [];
+    }
+  };
 
   // Normalize gesture name for comparison (handles "GoodJob" vs "good_job" etc)
   const normalizeGestureName = (name: string): string => {
@@ -551,65 +687,77 @@ const Monitor = () => {
         frameCountRef.current++;
         const shouldProcessFrame = frameCountRef.current % HAND_FRAME_SKIP === 0;
 
-        // Hand Detection (with frame skipping) - SKIP if gesture already locked
+        // Hand Detection - ALWAYS detect hands (like Training.tsx)
         let hands: handPoseDetection.Hand[] = [];
-        const shouldDetectGesture = !lockedGesture && isVerifying;
         
-        if (shouldProcessFrame && (shouldDetectGesture || !isVerifying)) {
+        if (shouldProcessFrame) {
           hands = await detector.estimateHands(video);
           setHandsDetected(hands.length);
-        } else if (!shouldDetectGesture && isVerifying) {
-          // Gesture locked - skip hand detection to save CPU
-          hands = [];
+          lastHandsRef.current = hands; // ALWAYS store for test function
         }
 
         let detectedGesture: string | null = lockedGesture; // Use locked gesture if available
         let gestureConfidence = lockedGesture ? 1.0 : 0; // Locked = 100% confidence
         const now = Date.now();
 
-        // Process each detected hand
+        // Process each detected hand - draw ALL keypoints like Training.tsx
         for (const hand of hands) {
-          // Draw small green dots on fingertips only (minimal visual feedback)
-          const fingertipIndices = [4, 8, 12, 16, 20];
-          fingertipIndices.forEach(idx => {
-            const kp = hand.keypoints[idx];
-            if (kp) {
-              ctx.beginPath();
-              ctx.arc(kp.x, kp.y, 4, 0, 2 * Math.PI);
-              ctx.fillStyle = lockedGesture ? '#00ff00' : '#00ff88';
-              ctx.fill();
-            }
+          // Draw ALL 21 keypoints (same as Training.tsx)
+          hand.keypoints.forEach(kp => {
+            ctx.beginPath();
+            ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
+            ctx.fillStyle = isTestingGesture ? '#ff0000' : (lockedGesture ? '#00ff00' : '#00FF00');
+            ctx.fill();
+          });
+        }
+        
+        // Collect frames for DTW verification - only if not already locked and verifying
+        if (!lockedGesture && isVerifying && hands.length > 0) {
+          // Initialize start time if first frame
+          if (gestureFramesRef.current.length === 0) {
+            gestureStartTimeRef.current = Date.now();
+          }
+          
+          const elapsed = Date.now() - gestureStartTimeRef.current;
+          
+          // Extract landmarks in same format as Training.tsx
+          let leftHand = null;
+          let rightHand = null;
+          
+          hands.forEach(hand => {
+            const handData = extractHandLandmarks(hand);
+            if (hand.handedness === 'Left') leftHand = handData;
+            else rightHand = handData;
           });
           
-          // Collect frames for DTW - only if not already locked and verifying
-          if (!lockedGesture && isVerifying) {
-            // Extract frame data (21 landmarks x 3 coords = 63 values)
-            const frameData = hand.keypoints.map(kp => [kp.x, kp.y, (kp as any).z || 0]).flat();
-            gestureFramesRef.current.push(frameData);
+          // Record frame (same format as Training.tsx)
+          gestureFramesRef.current.push({
+            timestamp: elapsed,
+            left_hand: leftHand,
+            right_hand: rightHand
+          });
+          
+          // After 2 seconds of recording, classify once (like test gesture)
+          const GESTURE_RECORD_DURATION = 2000; // 2 seconds
+          if (elapsed >= GESTURE_RECORD_DURATION && gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW) {
+            // Classify once with collected frames
+            const framesToClassify = [...gestureFramesRef.current];
+            gestureFramesRef.current = []; // Reset for next attempt
             
-            // Keep only last 50 frames (sliding window)
-            if (gestureFramesRef.current.length > 50) {
-              gestureFramesRef.current = gestureFramesRef.current.slice(-50);
-            }
-            
-            // Call DTW API periodically (not every frame)
-            if (now - lastGestureApiCall.current > GESTURE_API_INTERVAL && 
-                gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW) {
-              lastGestureApiCall.current = now;
-              
-              // Call DTW API (async, non-blocking)
-              classifyGestureDTW(gestureFramesRef.current).then(result => {
-                if (result && result.confidence > 0.5) {
-                  setCurrentGesture(result.gesture);
-                  console.log(`[DTW] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
-                  
-                  // Check step verification with DTW result
-                  if (isVerifying && !lockedGesture) {
-                    checkStepVerification(result.gesture, result.confidence, currentComponents);
-                  }
+            classifyGestureDTW(framesToClassify).then(result => {
+              if (result && result.confidence > 0.5) {
+                setCurrentGesture(result.gesture);
+                console.log(`[DTW] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+                
+                // Check step verification with DTW result
+                if (isVerifying && !lockedGesture) {
+                  checkStepVerification(result.gesture, result.confidence, currentComponents);
                 }
-              });
-            }
+              } else {
+                console.log(`[DTW] Low confidence or no result, retrying...`);
+                // Will automatically start collecting again
+              }
+            });
           }
         }
 
@@ -1278,6 +1426,16 @@ const Monitor = () => {
                   <div className="absolute top-3 right-3 flex gap-2">
                     <Button 
                       size="sm" 
+                      variant={isTestingGesture ? "destructive" : "secondary"}
+                      onClick={startTestGesture}
+                      disabled={isTestingGesture || isVerifying}
+                      className={isTestingGesture ? "animate-pulse" : ""}
+                    >
+                      <Hand className="w-4 h-4" />
+                      <span className="ml-1 text-xs">{isTestingGesture ? "Testing..." : "Test Gesture"}</span>
+                    </Button>
+                    <Button 
+                      size="sm" 
                       variant={isListening ? "destructive" : "secondary"}
                       onClick={toggleListening}
                       className={isListening ? "animate-pulse" : ""}
@@ -1328,6 +1486,56 @@ const Monitor = () => {
                         <p className="text-lg text-white/60 mt-2">
                           Prepare to perform gesture and speak the phrase
                         </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Test Gesture Countdown Overlay */}
+                  {testGestureCountdown !== null && testGestureCountdown > 0 && (
+                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-20">
+                      <div className="text-center">
+                        <div className="text-9xl font-bold text-yellow-400 animate-pulse">
+                          {testGestureCountdown}
+                        </div>
+                        <p className="text-2xl text-white/80 mt-4">Test Gesture Starting...</p>
+                        <p className="text-lg text-white/60 mt-2">
+                          Get your hand in position
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Test Gesture Recording Overlay */}
+                  {isTestingGesture && testGestureCountdown === 0 && testMessage && (
+                    <div className="absolute bottom-4 left-4 right-4 z-20">
+                      <div className="bg-red-900/90 rounded-xl px-5 py-4 border border-red-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                          <span className="text-white font-medium">{testMessage}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Test Gesture Result */}
+                  {testGestureResult && !isTestingGesture && (
+                    <div className="absolute bottom-4 left-4 right-4 z-20">
+                      <div className={`rounded-xl px-5 py-4 border ${
+                        testGestureResult.includes('(') && !testGestureResult.includes('Error') 
+                          ? 'bg-green-900/90 border-green-500' 
+                          : 'bg-red-900/90 border-red-500'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-white font-medium">{testGestureResult}</span>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="text-white hover:bg-white/10"
+                            onClick={() => setTestGestureResult(null)}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   )}

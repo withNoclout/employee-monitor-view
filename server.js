@@ -683,6 +683,24 @@ app.post('/api/gestures/classify', async (req, res) => {
         return res.status(503).json({ error: 'Gesture process not ready' });
     }
     
+    // Debug: Log what we're sending
+    console.log('[Gesture] ========== CLASSIFY REQUEST ==========');
+    console.log('[Gesture] Frames count:', frames.length);
+    if (frames.length > 0) {
+        const f = frames[0];
+        console.log('[Gesture] First frame:', {
+            timestamp: f.timestamp,
+            left_hand: f.left_hand ? 'present' : 'null',
+            right_hand: f.right_hand ? 'present' : 'null'
+        });
+        if (f.right_hand && f.right_hand.landmarks) {
+            console.log('[Gesture] Right hand landmarks count:', f.right_hand.landmarks.length);
+        }
+        if (f.left_hand && f.left_hand.landmarks) {
+            console.log('[Gesture] Left hand landmarks count:', f.left_hand.landmarks.length);
+        }
+    }
+    
     try {
         // Use persistent process - send request and wait for response
         const result = await new Promise((resolve, reject) => {
@@ -702,9 +720,16 @@ app.post('/api/gestures/classify', async (req, res) => {
             }, 5000);
         });
         
+        // Log the result
+        console.log('[Gesture] ========== RESULT ==========');
+        console.log('[Gesture] Predicted:', result.predicted_class);
+        console.log('[Gesture] Confidence:', (result.confidence * 100).toFixed(1) + '%');
+        console.log('[Gesture] All probs:', result.all_probs);
+        console.log('[Gesture] ==============================');
+        
         res.json(result);
     } catch (error) {
-        console.error('Gesture classification error:', error);
+        console.error('[Gesture] Classification error:', error);
         res.status(500).json({ error: error.message });
     }
 });
