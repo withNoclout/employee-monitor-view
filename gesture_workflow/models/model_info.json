@@ -1,0 +1,20 @@
+{
+  "trained_at": "2025-11-26T13:32:26.575641",
+  "classes": [
+    "wave",
+    "good_job"
+  ],
+  "trained_classes": [
+    "wave",
+    "good_job"
+  ],
+  "class_sample_counts": {
+    "wave": 6,
+    "good_job": 6
+  },
+  "num_classes": 2,
+  "total_samples": 12,
+  "final_accuracy": 1.0,
+  "model_type": "DTW_KNN",
+  "k": 3
+}

@@ -535,6 +535,9 @@ app.post('/api/gestures/train', (req, res) => {
         console.log(`Gesture training process exited with code ${code}`);
         if (code === 0) {
             res.write('\n[TRAINING_COMPLETE]\n');
+            // Reload gesture inference process with new model
+            console.log('[Gesture] Reloading inference process after training...');
+            startGestureProcess();
         } else {
             res.write(`\n[TRAINING_FAILED] Code: ${code}\n`);
         }
@@ -567,8 +570,93 @@ app.get('/api/gestures/model', (req, res) => {
     }
 });
 
-// Gesture inference endpoint
+// Gesture inference endpoint with persistent process
 const GESTURE_INFERENCE_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
+
+// Persistent gesture inference process
+let gestureInferenceProcess = null;
+let gestureProcessReady = false;
+let gestureProcessClasses = [];
+let pendingClassifications = [];
+
+function startGestureProcess() {
+    if (gestureInferenceProcess) {
+        gestureInferenceProcess.kill();
+    }
+    
+    gestureProcessReady = false;
+    gestureProcessClasses = [];
+    
+    gestureInferenceProcess = spawn(PYTHON_PATH, [GESTURE_INFERENCE_SCRIPT, '--stream']);
+    
+    let buffer = '';
+    
+    gestureInferenceProcess.stdout.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep incomplete line in buffer
+        
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+                const parsed = JSON.parse(line);
+                if (parsed.status === 'loaded') {
+                    gestureProcessReady = true;
+                    gestureProcessClasses = parsed.classes || [];
+                    console.log('[Gesture] Process ready with classes:', gestureProcessClasses);
+                } else if (parsed.predicted_class !== undefined) {
+                    // Classification result - resolve pending promise
+                    if (pendingClassifications.length > 0) {
+                        const { resolve } = pendingClassifications.shift();
+                        resolve(parsed);
+                    }
+                } else if (parsed.error) {
+                    if (pendingClassifications.length > 0) {
+                        const { reject } = pendingClassifications.shift();
+                        reject(new Error(parsed.error));
+                    }
+                }
+            } catch (e) {
+                // Not JSON, ignore
+            }
+        }
+    });
+    
+    gestureInferenceProcess.stderr.on('data', (data) => {
+        console.error('[Gesture Process Error]:', data.toString());
+    });
+    
+    gestureInferenceProcess.on('close', (code) => {
+        console.log('[Gesture] Process closed with code:', code);
+        gestureProcessReady = false;
+        gestureInferenceProcess = null;
+        
+        // Reject any pending classifications
+        while (pendingClassifications.length > 0) {
+            const { reject } = pendingClassifications.shift();
+            reject(new Error('Gesture process closed'));
+        }
+    });
+    
+    gestureInferenceProcess.on('error', (err) => {
+        console.error('[Gesture] Process error:', err);
+        gestureProcessReady = false;
+    });
+}
+
+// Start gesture process on server start (if model exists)
+const gestureModelPath = path.join(__dirname, 'gesture_workflow', 'models', 'gesture_model.pkl');
+if (fs.existsSync(gestureModelPath)) {
+    console.log('[Gesture] Starting persistent inference process...');
+    startGestureProcess();
+}
+
+// Endpoint to restart gesture process (after training)
+app.post('/api/gestures/reload', (req, res) => {
+    console.log('[Gesture] Reloading inference process...');
+    startGestureProcess();
+    res.json({ status: 'reloading' });
+});
 
 app.post('/api/gestures/classify', async (req, res) => {
     const { frames, threshold } = req.body;
@@ -577,59 +665,41 @@ app.post('/api/gestures/classify', async (req, res) => {
         return res.status(400).json({ error: 'frames array required' });
     }
     
+    // Start process if not running
+    if (!gestureInferenceProcess) {
+        if (fs.existsSync(gestureModelPath)) {
+            startGestureProcess();
+            // Wait for process to be ready (max 5 seconds)
+            const startTime = Date.now();
+            while (!gestureProcessReady && Date.now() - startTime < 5000) {
+                await new Promise(r => setTimeout(r, 100));
+            }
+        } else {
+            return res.status(400).json({ error: 'Model not found. Please train first.' });
+        }
+    }
+    
+    if (!gestureProcessReady) {
+        return res.status(503).json({ error: 'Gesture process not ready' });
+    }
+    
     try {
+        // Use persistent process - send request and wait for response
         const result = await new Promise((resolve, reject) => {
-            const proc = spawn(PYTHON_PATH, [GESTURE_INFERENCE_SCRIPT, '--stream']);
-            let output = '';
-            let error = '';
-            let modelLoaded = false;
+            // Add to pending queue
+            pendingClassifications.push({ resolve, reject });
             
-            proc.stdout.on('data', (data) => {
-                const lines = data.toString().split('\n');
-                for (const line of lines) {
-                    if (!line.trim()) continue;
-                    try {
-                        const parsed = JSON.parse(line);
-                        if (parsed.status === 'loaded') {
-                            modelLoaded = true;
-                            // Send the classification request
-                            proc.stdin.write(JSON.stringify({ frames, threshold: threshold || 0.5 }) + '\n');
-                        } else if (parsed.status === 'ready') {
-                            // Already sent after 'loaded'
-                        } else {
-                            // This is the classification result
-                            output = line;
-                            proc.stdin.write('quit\n');
-                        }
-                    } catch (e) {
-                        // Not JSON
-                    }
-                }
-            });
+            // Send classification request
+            gestureInferenceProcess.stdin.write(JSON.stringify({ frames, threshold: threshold || 0.5 }) + '\n');
             
-            proc.stderr.on('data', (data) => {
-                error += data.toString();
-            });
-            
-            proc.on('close', (code) => {
-                if (output) {
-                    try {
-                        resolve(JSON.parse(output));
-                    } catch (e) {
-                        reject(new Error('Failed to parse inference output'));
-                    }
-                } else if (error) {
-                    reject(new Error(error));
-                } else {
-                    reject(new Error('No output from inference'));
-                }
-            });
-            
-            // Timeout after 10 seconds
+            // Timeout after 5 seconds
             setTimeout(() => {
-                proc.kill();
-                reject(new Error('Inference timeout'));
-            }, 10000);
+                const idx = pendingClassifications.findIndex(p => p.resolve === resolve);
+                if (idx !== -1) {
+                    pendingClassifications.splice(idx, 1);
+                    reject(new Error('Classification timeout'));
+                }
+            }, 5000);
         });
         
         res.json(result);
@@ -641,4 +711,5 @@ app.post('/api/gestures/classify', async (req, res) => {
 
 // Serve gesture models statically
 app.use('/gesture-models', express.static(path.join(__dirname, 'gesture_workflow', 'models')));
+
 

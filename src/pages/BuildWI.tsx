@@ -19,7 +19,11 @@ import {
   GripVertical,
   Box,
   Hand,
-  ArrowRight
+  ArrowRight,
+  FileText,
+  Clock,
+  Loader2,
+  Edit
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -38,6 +42,27 @@ interface ClassInfo {
   includeInTraining: boolean;
 }
 
+// Gesture class from server API
+interface GestureClass {
+  id: string;
+  name: string;
+  displayName: string;
+  sequenceCount: number;
+  totalFrames: number;
+  createdAt: string;
+}
+
+// Saved Work Instruction
+interface SavedWI {
+  id: string;
+  title: string;
+  frequency: string;
+  scheduledTime: string;
+  steps: WIStep[];
+  verificationText: string;
+  createdAt: string;
+}
+
 interface WIStep {
   id: string;
   gestureId: string | null;
@@ -47,10 +72,15 @@ interface WIStep {
 
 const BuildWI = () => {
   const navigate = useNavigate();
-  const [gestures, setGestures] = useState<ClassInfo[]>([]);
+  const [gestures, setGestures] = useState<GestureClass[]>([]);
   const [components, setComponents] = useState<ClassInfo[]>([]);
   const [steps, setSteps] = useState<WIStep[]>([]);
   const [wiTitle, setWiTitle] = useState("New Work Instruction");
+  const [isLoadingGestures, setIsLoadingGestures] = useState(false);
+  
+  // Saved Work Instructions
+  const [savedWIs, setSavedWIs] = useState<SavedWI[]>([]);
+  const [selectedWI, setSelectedWI] = useState<string | null>(null);
   
   // Routine State
   const [frequency, setFrequency] = useState("Daily");
@@ -63,14 +93,65 @@ const BuildWI = () => {
   const [verificationText, setVerificationText] = useState("");
   const [isListening, setIsListening] = useState(false);
 
+  // Fetch gestures from server API
+  const fetchGestures = async () => {
+    setIsLoadingGestures(true);
+    try {
+      const response = await fetch('http://localhost:3000/api/gestures/classes');
+      if (response.ok) {
+        const data = await response.json();
+        setGestures(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch gestures:", error);
+    } finally {
+      setIsLoadingGestures(false);
+    }
+  };
+
+  // Load saved Work Instructions
+  const loadSavedWIs = () => {
+    const saved = localStorage.getItem('saved_work_instructions');
+    if (saved) {
+      setSavedWIs(JSON.parse(saved));
+    }
+  };
+
   useEffect(() => {
-    // Load data from localStorage (shared with Training page)
-    const savedGestures = localStorage.getItem('movement_classes');
-    const savedComponents = localStorage.getItem('training_classes');
+    // Fetch gestures from server
+    fetchGestures();
     
-    if (savedGestures) setGestures(JSON.parse(savedGestures));
+    // Load components from localStorage (shared with Training page)
+    const savedComponents = localStorage.getItem('training_classes');
     if (savedComponents) setComponents(JSON.parse(savedComponents));
+    
+    // Load saved Work Instructions
+    loadSavedWIs();
   }, []);
+
+  // Load a saved WI for editing
+  const loadWI = (wi: SavedWI) => {
+    setSelectedWI(wi.id);
+    setWiTitle(wi.title);
+    setFrequency(wi.frequency);
+    setScheduledTime(wi.scheduledTime);
+    setSteps(wi.steps);
+    setVerificationText(wi.verificationText || "");
+    toast.success(`Loaded "${wi.title}"`);
+  };
+
+  // Create new WI
+  const createNewWI = () => {
+    setSelectedWI(null);
+    setWiTitle("New Work Instruction");
+    setFrequency("Daily");
+    setScheduledTime(() => {
+      const now = new Date();
+      return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    });
+    setSteps([]);
+    setVerificationText("");
+  };
 
   const addStep = (gestureId: string | null = null, componentId: string | null = null) => {
     const newStep: WIStep = {
@@ -136,8 +217,8 @@ const BuildWI = () => {
       return;
     }
     
-    const newWI = {
-      id: Math.random().toString(36).substr(2, 9),
+    const newWI: SavedWI = {
+      id: selectedWI || Math.random().toString(36).substr(2, 9),
       title: wiTitle,
       frequency,
       scheduledTime,
@@ -146,11 +227,34 @@ const BuildWI = () => {
       createdAt: new Date().toISOString()
     };
 
-    const existingWIs = JSON.parse(localStorage.getItem('saved_work_instructions') || '[]');
-    localStorage.setItem('saved_work_instructions', JSON.stringify([...existingWIs, newWI]));
+    let existingWIs = JSON.parse(localStorage.getItem('saved_work_instructions') || '[]');
     
-    console.log("Saving WI:", newWI);
-    toast.success("Work Instruction saved successfully!");
+    if (selectedWI) {
+      // Update existing
+      existingWIs = existingWIs.map((wi: SavedWI) => wi.id === selectedWI ? newWI : wi);
+      toast.success("Work Instruction updated!");
+    } else {
+      // Add new
+      existingWIs.push(newWI);
+      toast.success("Work Instruction saved!");
+    }
+    
+    localStorage.setItem('saved_work_instructions', JSON.stringify(existingWIs));
+    setSelectedWI(newWI.id);
+    loadSavedWIs(); // Refresh the list
+  };
+
+  // Delete a saved WI
+  const deleteWI = (id: string) => {
+    const existingWIs = JSON.parse(localStorage.getItem('saved_work_instructions') || '[]');
+    const filtered = existingWIs.filter((wi: SavedWI) => wi.id !== id);
+    localStorage.setItem('saved_work_instructions', JSON.stringify(filtered));
+    loadSavedWIs();
+    
+    if (selectedWI === id) {
+      createNewWI();
+    }
+    toast.success("Work Instruction deleted");
   };
 
   return (
@@ -185,26 +289,35 @@ const BuildWI = () => {
                 <Hand className="w-5 h-5 text-primary" />
                 Available Gestures
               </CardTitle>
-              <CardDescription>Drag or select gestures</CardDescription>
+              <CardDescription>Drag or select gestures (from server)</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               <ScrollArea className="h-[300px] px-4 pb-4">
-                <div className="space-y-2">
-                  {gestures.map(g => (
-                    <div 
-                      key={g.id} 
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, 'gesture', g.id)}
-                      className="p-3 border rounded-lg bg-card hover:bg-accent/50 cursor-grab active:cursor-grabbing transition-colors flex items-center justify-between"
-                    >
-                      <span className="font-medium text-sm">{g.name}</span>
-                      <Badge variant="secondary" className="text-[10px]">Gesture</Badge>
-                    </div>
-                  ))}
-                  {gestures.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-4">No gestures found. Go to Training to add some.</p>
-                  )}
-                </div>
+                {isLoadingGestures ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {gestures.map(g => (
+                      <div 
+                        key={g.id} 
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, 'gesture', g.name)}
+                        className="p-3 border rounded-lg bg-card hover:bg-accent/50 cursor-grab active:cursor-grabbing transition-colors flex items-center justify-between"
+                      >
+                        <div>
+                          <span className="font-medium text-sm">{g.displayName || g.name}</span>
+                          <p className="text-xs text-muted-foreground">{g.sequenceCount} sequences</p>
+                        </div>
+                        <Badge variant="secondary" className="text-[10px]">Gesture</Badge>
+                      </div>
+                    ))}
+                    {gestures.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-4">No gestures found. Go to Training to add some.</p>
+                    )}
+                  </div>
+                )}
               </ScrollArea>
             </CardContent>
           </Card>
@@ -319,7 +432,7 @@ const BuildWI = () => {
                               </SelectTrigger>
                               <SelectContent>
                                 {gestures.map(g => (
-                                  <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                                  <SelectItem key={g.id} value={g.name}>{g.displayName || g.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -335,7 +448,7 @@ const BuildWI = () => {
                               </SelectTrigger>
                               <SelectContent>
                                 {components.map(c => (
-                                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -366,9 +479,87 @@ const BuildWI = () => {
           </Card>
         </div>
 
-        {/* Right Sidebar: Verification */}
+        {/* Right Sidebar: Existing Work Instructions */}
         <div className="lg:col-span-3 space-y-6">
-          <Card className="h-full">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-500" />
+                  Existing WIs
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={createNewWI}>
+                  <Plus className="w-4 h-4 mr-1" />
+                  New
+                </Button>
+              </div>
+              <CardDescription>Click to edit an existing instruction</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea className="h-[300px] px-4 pb-4">
+                <div className="space-y-2">
+                  {savedWIs.map(wi => (
+                    <div 
+                      key={wi.id}
+                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                        selectedWI === wi.id 
+                          ? 'border-primary bg-primary/5' 
+                          : 'bg-card hover:bg-accent/50'
+                      }`}
+                      onClick={() => loadWI(wi)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{wi.title}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-[10px]">{wi.frequency}</Badge>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {wi.scheduledTime}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {wi.steps.length} steps
+                          </p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              loadWI(wi);
+                            }}
+                          >
+                            <Edit className="w-3 h-3" />
+                          </Button>
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteWI(wi.id);
+                            }}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {savedWIs.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No saved work instructions yet.
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-green-500" />
@@ -377,13 +568,6 @@ const BuildWI = () => {
               <CardDescription>Operator understanding check</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="p-4 bg-muted rounded-lg text-sm">
-                <p className="font-medium mb-2">Instructions:</p>
-                <p className="text-muted-foreground">
-                  Ask the operator to explain the process back to you. Use the microphone to record their response and verify understanding.
-                </p>
-              </div>
-
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium">Operator Response</label>
@@ -394,20 +578,16 @@ const BuildWI = () => {
                     onClick={toggleListening}
                   >
                     {isListening ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
-                    {isListening ? "Stop Recording" : "Start Recording"}
+                    {isListening ? "Stop" : "Record"}
                   </Button>
                 </div>
                 <Textarea 
-                  className="min-h-[200px] resize-none"
+                  className="min-h-[100px] resize-none"
                   placeholder="Transcribed text will appear here..."
                   value={verificationText}
                   onChange={(e) => setVerificationText(e.target.value)}
                 />
               </div>
-
-              <Button className="w-full" variant="secondary" disabled={!verificationText}>
-                Analyze Understanding
-              </Button>
             </CardContent>
           </Card>
         </div>

@@ -180,24 +180,85 @@ def dtw_distance_fast(seq1, seq2, window=None):
     return dtw_matrix[n, m] / (n + m)
 
 
+def downsample_sequence(seq, target_frames=20):
+    """
+    Downsample a sequence to a fixed number of frames.
+    Uses linear interpolation to preserve gesture shape.
+    """
+    n = len(seq)
+    if n <= target_frames:
+        return seq
+    
+    indices = np.linspace(0, n - 1, target_frames).astype(int)
+    return seq[indices]
+
+
+def compute_centroid(sequences):
+    """
+    Compute a centroid (representative) sequence from multiple sequences.
+    Uses averaging after resampling to same length.
+    """
+    if not sequences:
+        return None
+    
+    # Find median length
+    lengths = [len(s) for s in sequences]
+    target_len = int(np.median(lengths))
+    
+    # Resample all to same length
+    resampled = []
+    for seq in sequences:
+        if len(seq) == target_len:
+            resampled.append(seq)
+        else:
+            indices = np.linspace(0, len(seq) - 1, target_len).astype(int)
+            resampled.append(seq[indices])
+    
+    # Average
+    return np.mean(resampled, axis=0).astype(np.float32)
+
+
 class DTWGestureClassifier:
     """
     DTW + k-NN Gesture Classifier
     
     Stores template sequences for each class and uses DTW distance
     with k-NN voting for classification.
+    
+    Optimized version uses:
+    - Downsampled sequences (20 frames) for faster comparison
+    - Centroid templates (1 per class) for O(num_classes) instead of O(num_templates)
     """
     
-    def __init__(self, k=3):
+    def __init__(self, k=3, use_centroids=True, downsample_frames=20):
         self.k = k
+        self.use_centroids = use_centroids
+        self.downsample_frames = downsample_frames
         self.templates = []  # List of (class_name, sequence)
         self.class_names = []
+        self.centroids = {}  # class_name -> centroid sequence (computed during save/build)
     
     def add_template(self, class_name, sequence):
         """Add a template sequence for a class"""
         if class_name not in self.class_names:
             self.class_names.append(class_name)
-        self.templates.append((class_name, sequence))
+        # Downsample for storage
+        downsampled = downsample_sequence(sequence, self.downsample_frames)
+        self.templates.append((class_name, downsampled))
+    
+    def build_centroids(self):
+        """Build centroid templates for each class"""
+        class_sequences = {}
+        for class_name, seq in self.templates:
+            if class_name not in class_sequences:
+                class_sequences[class_name] = []
+            class_sequences[class_name].append(seq)
+        
+        self.centroids = {}
+        for class_name, sequences in class_sequences.items():
+            centroid = compute_centroid(sequences)
+            if centroid is not None:
+                self.centroids[class_name] = centroid
     
     def classify(self, query_sequence, return_all_distances=False):
         """
@@ -205,14 +266,24 @@ class DTWGestureClassifier:
         
         Returns: (predicted_class, confidence, all_probs)
         """
-        if not self.templates:
+        if not self.templates and not self.centroids:
             return "Unknown", 0.0, {}
         
-        # Compute DTW distance to all templates
-        distances = []
-        for class_name, template in self.templates:
-            dist = dtw_distance_fast(query_sequence, template)
-            distances.append((dist, class_name))
+        # Downsample query
+        query_downsampled = downsample_sequence(query_sequence, self.downsample_frames)
+        
+        # Use centroids if available (much faster - O(num_classes))
+        if self.use_centroids and self.centroids:
+            distances = []
+            for class_name, centroid in self.centroids.items():
+                dist = dtw_distance_fast(query_downsampled, centroid)
+                distances.append((dist, class_name))
+        else:
+            # Fall back to all templates (slower - O(num_templates))
+            distances = []
+            for class_name, template in self.templates:
+                dist = dtw_distance_fast(query_downsampled, template)
+                distances.append((dist, class_name))
         
         # Sort by distance (closest first)
         distances.sort(key=lambda x: x[0])
@@ -259,11 +330,17 @@ class DTWGestureClassifier:
         return predicted_class, confidence, all_probs
     
     def save(self, path):
-        """Save model to file"""
+        """Save model to file (includes centroids for fast inference)"""
+        # Build centroids before saving
+        self.build_centroids()
+        
         data = {
             'k': self.k,
+            'use_centroids': self.use_centroids,
+            'downsample_frames': self.downsample_frames,
             'templates': self.templates,
-            'class_names': self.class_names
+            'class_names': self.class_names,
+            'centroids': self.centroids
         }
         with open(path, 'wb') as f:
             pickle.dump(data, f)
@@ -274,9 +351,19 @@ class DTWGestureClassifier:
         with open(path, 'rb') as f:
             data = pickle.load(f)
         
-        model = cls(k=data['k'])
-        model.templates = data['templates']
-        model.class_names = data['class_names']
+        model = cls(
+            k=data.get('k', 3),
+            use_centroids=data.get('use_centroids', True),
+            downsample_frames=data.get('downsample_frames', 20)
+        )
+        model.templates = data.get('templates', [])
+        model.class_names = data.get('class_names', [])
+        model.centroids = data.get('centroids', {})
+        
+        # Build centroids if not present (backward compatibility)
+        if not model.centroids and model.templates:
+            model.build_centroids()
+        
         return model
 
 

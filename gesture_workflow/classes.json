@@ -1,0 +1,21 @@
+{
+  "classes": [
+    {
+      "id": "gesture_1764160802591",
+      "name": "wave",
+      "displayName": "wave",
+      "duration": 2,
+      "createdAt": "2025-11-26T12:40:02.591Z"
+    },
+    {
+      "id": "gesture_1764160860685",
+      "name": "good_job",
+      "displayName": "good job",
+      "duration": 2,
+      "createdAt": "2025-11-26T12:41:00.685Z"
+    }
+  ],
+  "version": "1.0",
+  "created_at": "2025-11-26T12:40:02.591Z",
+  "updated_at": "2025-11-26T12:41:00.685Z"
+}
