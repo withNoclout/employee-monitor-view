@@ -67,6 +67,11 @@ const Monitor = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Permission State
+  const [cameraPermission, setCameraPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
+  const [micPermission, setMicPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
+  const [permissionsChecked, setPermissionsChecked] = useState(false);
+
   // Task State
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -127,6 +132,44 @@ const Monitor = () => {
   const detectionIntervalRef = useRef<number>(FAST_DETECTION_INTERVAL);
 
   const employee = id ? employeeData[id] : null;
+
+  // Request permissions on mount - ensures we have camera + mic before tasks start
+  useEffect(() => {
+    const requestPermissions = async () => {
+      // Check and request camera permission
+      try {
+        const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        cameraStream.getTracks().forEach(track => track.stop()); // Stop immediately, just checking
+        setCameraPermission('granted');
+        console.log('[Permissions] Camera permission granted');
+      } catch (err) {
+        console.error('[Permissions] Camera permission denied:', err);
+        setCameraPermission('denied');
+        toast.error("Camera permission denied. Please allow camera access.");
+      }
+
+      // Check and request microphone permission
+      try {
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micStream.getTracks().forEach(track => track.stop()); // Stop immediately, just checking
+        setMicPermission('granted');
+        console.log('[Permissions] Microphone permission granted');
+      } catch (err) {
+        console.error('[Permissions] Microphone permission denied:', err);
+        setMicPermission('denied');
+        toast.error("Microphone permission denied. Please allow microphone access.");
+      }
+
+      setPermissionsChecked(true);
+    };
+
+    // Only request for emp-001 (the live user)
+    if (id === "emp-001") {
+      requestPermissions();
+    } else {
+      setPermissionsChecked(true);
+    }
+  }, [id]);
 
   // Load Hand Pose Detector
   useEffect(() => {
@@ -751,12 +794,13 @@ const Monitor = () => {
     }
   }, [id]);
 
-  // Camera Setup - Optimized resolution for inference
+  // Camera Setup - Only start after permission granted
   useEffect(() => {
     let stream: MediaStream | null = null;
 
     const startCamera = async () => {
-      if (isLive && id === "emp-001") {
+      // Wait for permissions to be checked and camera permission granted
+      if (isLive && id === "emp-001" && cameraPermission === 'granted') {
         try {
           // Use 640x480 - optimal for MobileNet/MediaPipe and YOLO inference
           // Reduces processing load significantly vs 1920x1080
@@ -782,7 +826,7 @@ const Monitor = () => {
     return () => {
       if (stream) stream.getTracks().forEach(track => track.stop());
     };
-  }, [isLive, id]);
+  }, [isLive, id, cameraPermission]);
 
   const handleSelectTask = (task: Task) => {
     setSelectedTask(task);
@@ -1034,6 +1078,25 @@ const Monitor = () => {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              {/* Permission Status */}
+              {id === "emp-001" && (
+                <>
+                  <Badge 
+                    variant="outline" 
+                    className={`text-xs ${cameraPermission === 'granted' ? 'border-green-500 text-green-500' : cameraPermission === 'denied' ? 'border-red-500 text-red-500' : 'border-yellow-500 text-yellow-500'}`}
+                  >
+                    <Video className="w-3 h-3 mr-1" />
+                    {cameraPermission === 'granted' ? '✓' : cameraPermission === 'denied' ? '✗' : '?'}
+                  </Badge>
+                  <Badge 
+                    variant="outline" 
+                    className={`text-xs ${micPermission === 'granted' ? 'border-green-500 text-green-500' : micPermission === 'denied' ? 'border-red-500 text-red-500' : 'border-yellow-500 text-yellow-500'}`}
+                  >
+                    <Mic className="w-3 h-3 mr-1" />
+                    {micPermission === 'granted' ? '✓' : micPermission === 'denied' ? '✗' : '?'}
+                  </Badge>
+                </>
+              )}
               {/* Calibration Status */}
               <Badge className={isFullyCalibrated ? "bg-green-500" : "bg-orange-500"}>
                 {isFullyCalibrated ? "✓ All Tasks Complete" : `${completedTasks}/${totalTasks} Tasks Done`}
@@ -1076,8 +1139,49 @@ const Monitor = () => {
                     </div>
                   )}
                   
+                  {/* Permission Request Overlay */}
+                  {id === "emp-001" && !permissionsChecked && (
+                    <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-30">
+                      <div className="text-white text-center p-6">
+                        <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" />
+                        <h3 className="text-xl font-bold mb-2">Requesting Permissions</h3>
+                        <p className="text-white/70 mb-4">Please allow access to camera and microphone</p>
+                        <div className="flex justify-center gap-4">
+                          <div className={`flex items-center gap-2 ${cameraPermission === 'granted' ? 'text-green-400' : 'text-yellow-400'}`}>
+                            <Video className="w-5 h-5" />
+                            <span>Camera {cameraPermission === 'granted' ? '✓' : '...'}</span>
+                          </div>
+                          <div className={`flex items-center gap-2 ${micPermission === 'granted' ? 'text-green-400' : 'text-yellow-400'}`}>
+                            <Mic className="w-5 h-5" />
+                            <span>Microphone {micPermission === 'granted' ? '✓' : '...'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Permission Denied Warning */}
+                  {id === "emp-001" && permissionsChecked && (cameraPermission === 'denied' || micPermission === 'denied') && (
+                    <div className="absolute inset-0 bg-red-900/80 flex items-center justify-center z-30">
+                      <div className="text-white text-center p-6">
+                        <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
+                        <h3 className="text-xl font-bold mb-2">Permissions Required</h3>
+                        <p className="text-white/70 mb-4">
+                          {cameraPermission === 'denied' && micPermission === 'denied' 
+                            ? 'Camera and microphone access denied'
+                            : cameraPermission === 'denied' 
+                              ? 'Camera access denied' 
+                              : 'Microphone access denied'}
+                        </p>
+                        <p className="text-sm text-white/50">
+                          Please enable permissions in your browser settings and refresh the page
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
                   {/* Model Loading Indicator */}
-                  {isLoadingModel && (
+                  {isLoadingModel && permissionsChecked && cameraPermission === 'granted' && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                       <div className="text-white text-center">
                         <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
