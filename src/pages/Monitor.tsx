@@ -422,6 +422,14 @@ const Monitor = () => {
     return { gesture: bestGesture, confidence };
   }, [trainedGestures]);
 
+  // Normalize gesture name for comparison (handles "GoodJob" vs "good_job" etc)
+  const normalizeGestureName = (name: string): string => {
+    return name
+      .toLowerCase()
+      .replace(/[_\-\s]+/g, '') // Remove underscores, hyphens, spaces
+      .trim();
+  };
+
   // Check if current step requirements are met and lock gesture/component on first high-confidence match
   const checkStepVerification = useCallback((gesture: string | null, gestureConfidence: number, components: Detection[]) => {
     if (!selectedTask || !isTaskActive || !isVerifying) return false;
@@ -439,14 +447,21 @@ const Monitor = () => {
         // Already locked with correct gesture
         gestureMatch = true;
       } else if (gesture && gestureConfidence >= LOCK_CONFIDENCE) {
-        // Check if this is the REQUIRED gesture
+        // Check if this is the REQUIRED gesture (normalize names for flexible matching)
         const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
-        if (requiredGesture && gesture.toLowerCase() === requiredGesture.name.toLowerCase()) {
-          // CORRECT gesture detected - LOCK IT and mark as DONE
-          setLockedGesture(gesture);
-          setGestureVerified(true);
-          gestureMatch = true;
-          toast.success(`✓ Gesture "${gesture}" - Done!`);
+        if (requiredGesture) {
+          const detectedNorm = normalizeGestureName(gesture);
+          const requiredNorm = normalizeGestureName(requiredGesture.name);
+          
+          console.log(`[Gesture Match] Detected: "${gesture}" (${detectedNorm}) vs Required: "${requiredGesture.name}" (${requiredNorm})`);
+          
+          if (detectedNorm === requiredNorm) {
+            // CORRECT gesture detected - LOCK IT and mark as DONE
+            setLockedGesture(gesture);
+            setGestureVerified(true);
+            gestureMatch = true;
+            toast.success(`✓ Gesture "${gesture}" - Done!`);
+          }
         }
         // If wrong gesture, don't lock - keep looking
       }
