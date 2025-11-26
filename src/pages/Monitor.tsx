@@ -83,7 +83,10 @@ const Monitor = () => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationStartTime, setVerificationStartTime] = useState<number | null>(null);
-  const VERIFICATION_DURATION = 5000; // 5 seconds to perform gesture + speech
+  const VERIFICATION_DURATION = 10000; // 10 seconds total (3s gesture + 7s speech/component)
+  const GESTURE_RECORD_DURATION = 3000; // First 3 seconds for gesture recording
+  const [isRecordingGesture, setIsRecordingGesture] = useState(false); // True during gesture recording phase
+  const [gestureRecordingComplete, setGestureRecordingComplete] = useState(false); // True after gesture is classified
 
   // Karaoke State
   const [karaokeWords, setKaraokeWords] = useState<string[]>([]);
@@ -124,6 +127,7 @@ const Monitor = () => {
   const GESTURE_API_INTERVAL = 500; // Call DTW API every 500ms
   const MIN_FRAMES_FOR_DTW = 10; // Minimum frames before calling API
   const gestureStartTimeRef = useRef<number>(0);
+  const isClassifyingGestureRef = useRef<boolean>(false); // Prevent multiple classify calls
   
   // Test Gesture State
   const [isTestingGesture, setIsTestingGesture] = useState(false);
@@ -135,7 +139,7 @@ const Monitor = () => {
   const lastHandsRef = useRef<handPoseDetection.Hand[]>([]); // Store last detected hands
   
   // Confidence threshold for locking gesture/component
-  const LOCK_CONFIDENCE = 0.7; // 70% confidence to lock in
+  const LOCK_CONFIDENCE = 0.5; // 50% confidence to lock in (same as DTW threshold)
 
   // Performance optimization - frame skipping
   const frameCountRef = useRef<number>(0);
@@ -556,6 +560,8 @@ const Monitor = () => {
       if (recordedFrameCount < 10) {
         setTestGestureResult(`Too few frames (${recordedFrameCount}). Keep hand visible.`);
         toast.error("Not enough hand data. Keep your hand visible.");
+        // Auto-dismiss after 3 seconds
+        setTimeout(() => setTestGestureResult(null), 3000);
         return;
       }
       
@@ -575,10 +581,15 @@ const Monitor = () => {
         toast.error("No gesture detected. Try again.");
       }
       
+      // Auto-dismiss result after 3 seconds
+      setTimeout(() => setTestGestureResult(null), 3000);
+      
     } catch (err: any) {
       console.error('[Test] Error:', err);
       setTestGestureResult(`Error: ${err.message}`);
       toast.error(err.message);
+      // Auto-dismiss error after 3 seconds
+      setTimeout(() => setTestGestureResult(null), 3000);
     } finally {
       setIsTestingGesture(false);
       setTestGestureCountdown(null);
@@ -711,13 +722,8 @@ const Monitor = () => {
           });
         }
         
-        // Collect frames for DTW verification - only if not already locked and verifying
-        if (!lockedGesture && isVerifying && hands.length > 0) {
-          // Initialize start time if first frame
-          if (gestureFramesRef.current.length === 0) {
-            gestureStartTimeRef.current = Date.now();
-          }
-          
+        // Collect frames for DTW verification - during gesture recording phase only
+        if (!lockedGesture && isVerifying && isRecordingGesture && !gestureRecordingComplete && hands.length > 0) {
           const elapsed = Date.now() - gestureStartTimeRef.current;
           
           // Extract landmarks in same format as Training.tsx
@@ -737,26 +743,41 @@ const Monitor = () => {
             right_hand: rightHand
           });
           
-          // After 2 seconds of recording, classify once (like test gesture)
-          const GESTURE_RECORD_DURATION = 2000; // 2 seconds
-          if (elapsed >= GESTURE_RECORD_DURATION && gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW) {
-            // Classify once with collected frames
+          // After GESTURE_RECORD_DURATION, classify ONCE (use ref flag to prevent multiple calls)
+          if (elapsed >= GESTURE_RECORD_DURATION && gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW && !isClassifyingGestureRef.current) {
+            isClassifyingGestureRef.current = true; // LOCK - prevent multiple API calls
+            console.log(`[Verify] Recording complete! ${gestureFramesRef.current.length} frames in ${elapsed}ms`);
+            setIsRecordingGesture(false);
+            
+            // Classify with all collected frames (copy array to avoid mutations)
             const framesToClassify = [...gestureFramesRef.current];
-            gestureFramesRef.current = []; // Reset for next attempt
+            gestureFramesRef.current = []; // Clear immediately
             
             classifyGestureDTW(framesToClassify).then(result => {
-              if (result && result.confidence > 0.5) {
+              console.log('[Verify] DTW result:', result);
+              setGestureRecordingComplete(true);
+              
+              if (result && result.confidence > LOCK_CONFIDENCE) {
                 setCurrentGesture(result.gesture);
-                console.log(`[DTW] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+                console.log(`[Verify] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
                 
                 // Check step verification with DTW result
                 if (isVerifying && !lockedGesture) {
                   checkStepVerification(result.gesture, result.confidence, currentComponents);
                 }
+                
+                toast.success(`🖐️ Gesture: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
               } else {
-                console.log(`[DTW] Low confidence or no result, retrying...`);
-                // Will automatically start collecting again
+                console.log(`[Verify] Low confidence or no result`);
+                setCurrentGesture(result?.gesture || 'unknown');
+                toast.warning(`⚠️ Gesture unclear: ${result?.gesture || 'none'} (${((result?.confidence || 0) * 100).toFixed(0)}%)`);
               }
+              
+              toast.info("🎤 Now speak the phrase!");
+            }).catch(err => {
+              console.error('[Verify] DTW classification failed:', err);
+              setGestureRecordingComplete(true);
+              toast.error("Gesture classification failed");
             });
           }
         }
@@ -922,7 +943,7 @@ const Monitor = () => {
 
     detect();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isLive, detector, currentComponents, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting, isVerifying, lockedGesture, lockedComponent]);
+  }, [isLive, detector, currentComponents, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting, isVerifying, lockedGesture, lockedComponent, isRecordingGesture, gestureRecordingComplete]);
 
   // Load Work Instructions and build task list
   useEffect(() => {
@@ -1105,6 +1126,9 @@ const Monitor = () => {
     setVerificationStartTime(null);
     setCurrentGesture(null);
     gestureFramesRef.current = []; // Clear DTW frames
+    isClassifyingGestureRef.current = false; // Reset classification lock
+    setIsRecordingGesture(false);
+    setGestureRecordingComplete(false);
   };
 
   // Countdown effect
@@ -1115,10 +1139,15 @@ const Monitor = () => {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
     } else {
-      // Countdown finished - start verification
+      // Countdown finished - start verification with gesture recording phase
       setCountdown(null);
       setIsVerifying(true);
+      setIsRecordingGesture(true); // Start gesture recording phase
+      setGestureRecordingComplete(false);
       setVerificationStartTime(Date.now());
+      gestureFramesRef.current = []; // Clear any old frames
+      gestureStartTimeRef.current = Date.now();
+      isClassifyingGestureRef.current = false; // Reset classification lock
       
       // Start speech recognition automatically
       if (recognitionRef.current) {
@@ -1131,7 +1160,7 @@ const Monitor = () => {
         }
       }
       
-      toast.info("GO! Perform gesture and speak the phrase!");
+      toast.info("🖐️ GESTURE FIRST! Hold your gesture for 2 seconds...");
     }
   }, [countdown]);
 
@@ -1157,29 +1186,45 @@ const Monitor = () => {
       if (allVerified) {
         // Success! Move to next step
         setIsVerifying(false);
+        setIsRecordingGesture(false);
+        setGestureRecordingComplete(false);
         isListeningRef.current = false;
         setIsListening(false);
         if (recognitionRef.current) {
           recognitionRef.current.stop();
         }
-        toast.success("✓ Step Complete!");
+        
+        // Show final summary
+        toast.success("✅ STEP PASSED!", { duration: 2000 });
+        console.log('[Verify] PASSED - Gesture:', lockedGesture, 'Component:', lockedComponent, 'Speech:', speechVerified);
+        
         handleCompleteStep();
       } else if (elapsed >= VERIFICATION_DURATION) {
-        // Time's up - failed verification
+        // Time's up - show final summary
         setIsVerifying(false);
+        setIsRecordingGesture(false);
+        setGestureRecordingComplete(false);
         isListeningRef.current = false;
         setIsListening(false);
         if (recognitionRef.current) {
           recognitionRef.current.stop();
         }
         
-        // Show what was missing
-        const missing = [];
-        if (currentStep?.gestureId && !lockedGesture) missing.push("gesture");
-        if (currentStep?.componentId && !lockedComponent) missing.push("component");
-        if (currentStep?.speechPhrase && !speechVerified) missing.push("speech");
+        // Build summary of what passed/failed
+        const results = [];
+        if (currentStep?.gestureId) {
+          results.push(lockedGesture ? `✅ Gesture: ${lockedGesture}` : `❌ Gesture: FAILED`);
+        }
+        if (currentStep?.componentId) {
+          results.push(lockedComponent ? `✅ Component: ${lockedComponent}` : `❌ Component: FAILED`);
+        }
+        if (currentStep?.speechPhrase) {
+          results.push(speechVerified ? `✅ Speech: OK` : `❌ Speech: FAILED`);
+        }
         
-        toast.error(`Time's up! Missing: ${missing.join(", ")}. Try again.`);
+        console.log('[Verify] FAILED - Summary:', results.join(', '));
+        toast.error(`❌ STEP FAILED!\n${results.join('\n')}`, { duration: 4000 });
+        
         resetStepVerification();
       }
     }, 100);
@@ -1552,6 +1597,46 @@ const Monitor = () => {
                           }}
                         />
                       </div>
+                      
+                      {/* Gesture Recording Phase Indicator */}
+                      {isRecordingGesture && !gestureRecordingComplete && (
+                        <div className="absolute top-4 left-4 right-4 flex justify-center">
+                          <div className="bg-red-600/90 rounded-xl px-6 py-3 border-2 border-red-400 animate-pulse">
+                            <div className="flex items-center gap-3 text-white">
+                              <div className="w-3 h-3 bg-white rounded-full animate-ping" />
+                              <Hand className="w-6 h-6" />
+                              <span className="text-lg font-bold">RECORDING GESTURE...</span>
+                              <span className="text-sm opacity-80">
+                                {Math.max(0, Math.ceil((GESTURE_RECORD_DURATION - (Date.now() - gestureStartTimeRef.current)) / 1000))}s
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Gesture Complete - Now Speech */}
+                      {gestureRecordingComplete && (
+                        <div className="absolute top-4 left-4 right-4 flex justify-center">
+                          <div className={`rounded-xl px-6 py-3 border-2 ${
+                            lockedGesture ? 'bg-green-600/90 border-green-400' : 'bg-yellow-600/90 border-yellow-400'
+                          }`}>
+                            <div className="flex items-center gap-3 text-white">
+                              {lockedGesture ? (
+                                <>
+                                  <CheckCircle2 className="w-6 h-6" />
+                                  <span className="text-lg font-bold">✓ Gesture: {lockedGesture}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertCircle className="w-6 h-6" />
+                                  <span className="text-lg font-bold">⚠ Gesture: {currentGesture || 'unclear'}</span>
+                                </>
+                              )}
+                              <span className="text-sm opacity-80 ml-4">🎤 Now speak!</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       
                       {/* Karaoke words display */}
                       {karaokeWords.length > 0 && (
