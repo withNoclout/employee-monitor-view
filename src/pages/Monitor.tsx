@@ -2,10 +2,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Video, VideoOff, CheckCircle2, Circle, PlayCircle, Clock, Calendar, ChevronRight, AlertCircle, Hand, Box, Loader2 } from "lucide-react";
+import { ArrowLeft, Video, VideoOff, CheckCircle2, Circle, PlayCircle, Clock, Calendar, ChevronRight, AlertCircle, Hand, Box, Loader2, Mic, MicOff, Volume2 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 import * as handPoseDetection from '@tensorflow-models/hand-pose-detection';
 
 // Employee data
@@ -23,6 +24,7 @@ interface WIStep {
   gestureId: string | null;
   componentId: string | null;
   description: string;
+  speechPhrase?: string;  // What the employee should say
 }
 
 interface WorkInstruction {
@@ -88,6 +90,14 @@ const Monitor = () => {
   const verificationHoldTime = useRef<number>(0);
   const HOLD_DURATION = 2000; // Hold gesture/component for 2 seconds to verify
 
+  // Speech Recognition State
+  const [isListening, setIsListening] = useState(false);
+  const [spokenText, setSpokenText] = useState("");
+  const [speechVerified, setSpeechVerified] = useState(false);
+  const [gestureVerified, setGestureVerified] = useState(false);
+  const [componentVerified, setComponentVerified] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   // Performance optimization - frame skipping
   const frameCountRef = useRef<number>(0);
   const HAND_FRAME_SKIP = 1; // Process every frame = full fps hand detection
@@ -135,6 +145,146 @@ const Monitor = () => {
       setTrainedComponents(components.map((c: any) => c.name));
     }
   }, []);
+
+  // Initialize Speech Recognition
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        const fullText = (spokenText + ' ' + finalTranscript).trim();
+        if (finalTranscript) {
+          setSpokenText(fullText);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error !== 'no-speech') {
+          setIsListening(false);
+        }
+      };
+
+      recognition.onend = () => {
+        // Restart if still listening
+        if (isListening && recognitionRef.current) {
+          try {
+            recognitionRef.current.start();
+          } catch (e) {
+            // Already started
+          }
+        }
+      };
+
+      recognitionRef.current = recognition;
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, [isListening, spokenText]);
+
+  // Toggle speech recognition
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      toast.error("Speech recognition not supported in this browser");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      setSpokenText("");
+      setSpeechVerified(false);
+      recognitionRef.current.start();
+      setIsListening(true);
+      toast.info("Listening... Speak the verification phrase");
+    }
+  };
+
+  // Fuzzy string matching for speech verification
+  const fuzzyMatch = (spoken: string, target: string): number => {
+    const spokenWords = spoken.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const targetWords = target.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    
+    if (targetWords.length === 0) return 1; // No target = always match
+    
+    let matchCount = 0;
+    for (const targetWord of targetWords) {
+      for (const spokenWord of spokenWords) {
+        // Check if words are similar (allowing for minor differences)
+        if (spokenWord.includes(targetWord) || targetWord.includes(spokenWord) ||
+            levenshteinDistance(spokenWord, targetWord) <= 2) {
+          matchCount++;
+          break;
+        }
+      }
+    }
+    
+    return matchCount / targetWords.length;
+  };
+
+  // Levenshtein distance for fuzzy matching
+  const levenshteinDistance = (a: string, b: string): number => {
+    const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+    
+    for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+    
+    for (let j = 1; j <= b.length; j++) {
+      for (let i = 1; i <= a.length; i++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1,
+          matrix[j - 1][i] + 1,
+          matrix[j - 1][i - 1] + cost
+        );
+      }
+    }
+    
+    return matrix[b.length][a.length];
+  };
+
+  // Check speech verification
+  useEffect(() => {
+    if (!isTaskActive || !selectedTask) return;
+    
+    const currentTaskSteps = getStepsForTask(selectedTask);
+    const currentStep = currentTaskSteps[currentStepIndex];
+    if (!currentStep?.speechPhrase) {
+      setSpeechVerified(true); // No speech required
+      return;
+    }
+    
+    const matchScore = fuzzyMatch(spokenText, currentStep.speechPhrase);
+    if (matchScore >= 0.7) { // 70% match threshold
+      setSpeechVerified(true);
+      if (isListening) {
+        recognitionRef.current?.stop();
+        setIsListening(false);
+        toast.success("Speech verified! ✓");
+      }
+    }
+  }, [spokenText, isTaskActive, selectedTask, currentStepIndex]);
 
   // Extract features from hand landmarks
   const extractFeatures = useCallback((hand: handPoseDetection.Hand): number[] => {
@@ -212,8 +362,15 @@ const Monitor = () => {
       }
     }
 
-    return gestureMatch && componentMatch;
-  }, [selectedTask, isTaskActive, currentStepIndex, trainedGestures, trainedComponents]);
+    // Update individual verification states
+    setGestureVerified(gestureMatch);
+    setComponentVerified(componentMatch);
+
+    // Check speech separately (handled in useEffect)
+    const speechMatch = !currentStep.speechPhrase || speechVerified;
+
+    return gestureMatch && componentMatch && speechMatch;
+  }, [selectedTask, isTaskActive, currentStepIndex, trainedGestures, trainedComponents, speechVerified]);
 
   // Main Detection Loop
   useEffect(() => {
@@ -575,6 +732,15 @@ const Monitor = () => {
     setCurrentStepIndex(0);
     setIsTaskActive(false);
     setStepVerified(false);
+    // Reset all verification states
+    setSpeechVerified(false);
+    setGestureVerified(false);
+    setComponentVerified(false);
+    setSpokenText("");
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
   };
 
   const handleStartTask = () => {
@@ -582,6 +748,11 @@ const Monitor = () => {
     setIsTaskActive(true);
     setCurrentStepIndex(0);
     setStepVerified(false);
+    // Reset all verification states for first step
+    setSpeechVerified(false);
+    setGestureVerified(false);
+    setComponentVerified(false);
+    setSpokenText("");
     toast.info("Task started! Complete the required actions.");
   };
 
@@ -594,9 +765,22 @@ const Monitor = () => {
     if (currentStepIndex < totalSteps - 1) {
       setCurrentStepIndex(prev => prev + 1);
       setStepVerified(false);
+      // Reset verification states for next step
+      setSpeechVerified(false);
+      setGestureVerified(false);
+      setComponentVerified(false);
+      setSpokenText("");
+      if (recognitionRef.current && isListening) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      }
       toast.success(`Step ${currentStepIndex + 1} verified!`);
     } else {
       setIsTaskActive(false);
+      if (recognitionRef.current && isListening) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      }
       setTasks(prev => prev.map(t => 
         t.id === selectedTask.id 
           ? { ...t, status: 'completed' as const, completedSteps: totalSteps }
@@ -614,9 +798,9 @@ const Monitor = () => {
     }
     if (task.type === 'calibration') {
       return [
-        { id: '1', gestureId: null, componentId: null, description: 'Verify camera position is correct and centered' },
-        { id: '2', gestureId: null, componentId: null, description: 'Check lighting conditions - ensure no shadows' },
-        { id: '3', gestureId: null, componentId: null, description: 'Perform T-Pose for 3 seconds to calibrate' },
+        { id: '1', gestureId: null, componentId: null, description: 'Verify camera position is correct and centered', speechPhrase: 'camera ready' },
+        { id: '2', gestureId: null, componentId: null, description: 'Check lighting conditions - ensure no shadows', speechPhrase: 'lighting check complete' },
+        { id: '3', gestureId: null, componentId: null, description: 'Perform T-Pose for 3 seconds to calibrate', speechPhrase: 'calibration done' },
       ];
     }
     return [];
@@ -776,6 +960,139 @@ const Monitor = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Task Requirements Panel - Below Webcam */}
+            {isTaskActive && selectedTask && currentTaskSteps[currentStepIndex] && (
+              <Card className="border-2 border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-sm flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-primary" />
+                      Step {currentStepIndex + 1} Requirements
+                    </h3>
+                    <Badge variant="outline" className="text-xs">
+                      {[gestureVerified, componentVerified, speechVerified].filter(Boolean).length}/
+                      {[currentTaskSteps[currentStepIndex]?.gestureId, 
+                        currentTaskSteps[currentStepIndex]?.componentId, 
+                        currentTaskSteps[currentStepIndex]?.speechPhrase].filter(Boolean).length || 1} Verified
+                    </Badge>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    {/* Gesture Requirement */}
+                    <div className={`p-3 rounded-lg border-2 transition-all ${
+                      !currentTaskSteps[currentStepIndex]?.gestureId 
+                        ? 'border-muted bg-muted/20 opacity-50' 
+                        : gestureVerified 
+                          ? 'border-green-500 bg-green-500/10' 
+                          : 'border-orange-500 bg-orange-500/10'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Hand className={`w-5 h-5 ${gestureVerified ? 'text-green-500' : 'text-orange-500'}`} />
+                        <span className="font-medium text-sm">Gesture</span>
+                        {gestureVerified && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
+                      </div>
+                      <p className="text-sm">
+                        {currentTaskSteps[currentStepIndex]?.gestureId 
+                          ? trainedGestures.find(g => g.id === currentTaskSteps[currentStepIndex]?.gestureId)?.name || currentTaskSteps[currentStepIndex]?.gestureId
+                          : 'None required'}
+                      </p>
+                      {currentTaskSteps[currentStepIndex]?.gestureId && !gestureVerified && (
+                        <p className="text-xs text-muted-foreground mt-1">Show gesture to camera</p>
+                      )}
+                    </div>
+
+                    {/* Component Requirement */}
+                    <div className={`p-3 rounded-lg border-2 transition-all ${
+                      !currentTaskSteps[currentStepIndex]?.componentId 
+                        ? 'border-muted bg-muted/20 opacity-50' 
+                        : componentVerified 
+                          ? 'border-green-500 bg-green-500/10' 
+                          : 'border-orange-500 bg-orange-500/10'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Box className={`w-5 h-5 ${componentVerified ? 'text-green-500' : 'text-orange-500'}`} />
+                        <span className="font-medium text-sm">Component</span>
+                        {componentVerified && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
+                      </div>
+                      <p className="text-sm">
+                        {currentTaskSteps[currentStepIndex]?.componentId 
+                          ? trainedComponents[parseInt(currentTaskSteps[currentStepIndex]?.componentId || '0') - 1] || 'Component'
+                          : 'None required'}
+                      </p>
+                      {currentTaskSteps[currentStepIndex]?.componentId && !componentVerified && (
+                        <p className="text-xs text-muted-foreground mt-1">Show component to camera</p>
+                      )}
+                    </div>
+
+                    {/* Speech Requirement */}
+                    <div className={`p-3 rounded-lg border-2 transition-all ${
+                      !currentTaskSteps[currentStepIndex]?.speechPhrase 
+                        ? 'border-muted bg-muted/20 opacity-50' 
+                        : speechVerified 
+                          ? 'border-green-500 bg-green-500/10' 
+                          : 'border-blue-500 bg-blue-500/10'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Volume2 className={`w-5 h-5 ${speechVerified ? 'text-green-500' : 'text-blue-500'}`} />
+                        <span className="font-medium text-sm">Speech</span>
+                        {speechVerified && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
+                      </div>
+                      <p className="text-sm font-medium">
+                        {currentTaskSteps[currentStepIndex]?.speechPhrase 
+                          ? `"${currentTaskSteps[currentStepIndex]?.speechPhrase}"`
+                          : 'None required'}
+                      </p>
+                      {currentTaskSteps[currentStepIndex]?.speechPhrase && !speechVerified && (
+                        <div className="mt-2">
+                          <Button 
+                            size="sm" 
+                            variant={isListening ? "destructive" : "outline"}
+                            onClick={toggleListening}
+                            className="w-full text-xs"
+                          >
+                            {isListening ? (
+                              <>
+                                <MicOff className="w-3 h-3 mr-1" />
+                                Stop
+                              </>
+                            ) : (
+                              <>
+                                <Mic className="w-3 h-3 mr-1" />
+                                Start Speaking
+                              </>
+                            )}
+                          </Button>
+                          {spokenText && (
+                            <p className="text-xs text-muted-foreground mt-1 italic">
+                              Heard: "{spokenText}"
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Overall Progress */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                      <span>Verification Progress</span>
+                      <span>{Math.round(([gestureVerified || !currentTaskSteps[currentStepIndex]?.gestureId, 
+                               componentVerified || !currentTaskSteps[currentStepIndex]?.componentId, 
+                               speechVerified || !currentTaskSteps[currentStepIndex]?.speechPhrase]
+                               .filter(Boolean).length / 3) * 100)}%</span>
+                    </div>
+                    <Progress 
+                      value={([gestureVerified || !currentTaskSteps[currentStepIndex]?.gestureId, 
+                               componentVerified || !currentTaskSteps[currentStepIndex]?.componentId, 
+                               speechVerified || !currentTaskSteps[currentStepIndex]?.speechPhrase]
+                               .filter(Boolean).length / 3) * 100} 
+                      className="h-2"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Task Details Panel */}
             <Card className="flex-1 overflow-hidden">

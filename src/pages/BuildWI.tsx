@@ -68,6 +68,7 @@ interface WIStep {
   gestureId: string | null;
   componentId: string | null;
   description: string;
+  speechPhrase: string;  // What the employee should say to verify understanding
 }
 
 const BuildWI = () => {
@@ -158,7 +159,8 @@ const BuildWI = () => {
       id: Math.random().toString(36).substr(2, 9),
       gestureId,
       componentId,
-      description: ""
+      description: "",
+      speechPhrase: ""
     };
     setSteps([...steps, newStep]);
   };
@@ -459,6 +461,21 @@ const BuildWI = () => {
                           value={step.description}
                           onChange={(e) => updateStep(step.id, 'description', e.target.value)}
                         />
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                            <Mic className="w-3 h-3" />
+                            Speech Verification Phrase
+                          </label>
+                          <Input 
+                            placeholder="What should employee say? (e.g., CPU installed correctly)"
+                            value={step.speechPhrase || ""}
+                            onChange={(e) => updateStep(step.id, 'speechPhrase', e.target.value)}
+                            className="text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Employee must speak this phrase to verify they understand the step
+                          </p>
+                        </div>
                       </CardContent>
                       <div className="absolute top-4 right-4">
                         <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeStep(step.id)}>

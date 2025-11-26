@@ -218,6 +218,74 @@ function startGestureProcess() {
 
 ### Accuracy Verification
 - Leave-one-out cross-validation: **100%** accuracy maintained
+
+---
+
+## Session: November 26, 2025 (Afternoon) - Live Monitor Enhancement
+
+### Goals
+Enhance the Monitor page with comprehensive task verification:
+
+1. **Task Requirements Panel** (below webcam)
+   - Show required gesture with visual indicator
+   - Show required spoken phrase
+   - Show required component to present to camera
+   
+2. **Speech-to-Text Integration**
+   - Use Web Speech API for real-time speech recognition
+   - Compare spoken text against step description
+   - Fuzzy matching for natural language variations
+   
+3. **Triple Verification System**
+   - ✋ Gesture verification (DTW classifier)
+   - 🎤 Speech verification (speech-to-text matching)
+   - 📦 Component verification (YOLO detection)
+
+### Implementation Status
+
+#### ✅ Phase 1: Enhanced Task Requirements UI
+- Added "Requirements" panel below webcam showing:
+  - Current step number and description
+  - Required gesture with real-time verification status
+  - Required component with detection status
+  - Required speech phrase with listening controls
+  - Overall progress bar
+
+#### ✅ Phase 2: Speech-to-Text
+- Integrated Web Speech API (`webkitSpeechRecognition`)
+- Added `speechPhrase` field to WIStep interface
+- Implemented fuzzy string matching with Levenshtein distance
+- Visual feedback during listening (microphone button states)
+- 70% match threshold for verification
+
+#### ✅ Phase 3: Integration
+- All three verification methods working together
+- Individual verification states tracked separately
+- Progress bar shows combined verification status
+- States reset properly between steps
+
+### Files Modified
+- `src/pages/Monitor.tsx`:
+  - Added speech recognition state and refs
+  - Added `toggleListening()` function
+  - Added `fuzzyMatch()` and `levenshteinDistance()` functions
+  - Updated `checkStepVerification()` to include speech
+  - Added Task Requirements Panel UI
+  - Updated reset logic in step transitions
+  
+- `src/pages/BuildWI.tsx`:
+  - Added `speechPhrase` field to `WIStep` interface
+  - Added speech phrase input in step builder UI
+  - Added Mic icon and helper text
+
+### Current Status
+- ✅ Task Requirements Panel implemented
+- ✅ Speech-to-Text working with fuzzy matching
+- ✅ Triple verification system complete
+- ✅ All verification states properly managed
+- 🔄 Ready for testing
+
+
 - Centroid approach preserves classification quality
 
 ### Current Status
