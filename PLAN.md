@@ -362,3 +362,181 @@ if (finalTranscript) {
 - ✅ Clear visual feedback
 - 🔄 Ready for testing
 
+---
+
+## Session: November 26, 2025 (Night) - Verification Flow Overhaul
+
+### Problems Identified
+
+#### 1. Test Gesture Button Missing
+- No quick way to test gesture detection outside of verification flow
+- Had to start a full task just to test if gestures were working
+
+#### 2. Frame Format Mismatch
+- Monitor.tsx was sending flat arrays: `[[x1,y1], [x2,y2], ...]`
+- Training.tsx and DTW API expected: `{timestamp, left_hand: {landmarks: [[]]}, right_hand: {landmarks: [[]]}}`
+- Caused classification to fail silently
+
+#### 3. Detection Loop Issues
+- Only drew 5 fingertip keypoints (Training.tsx draws all 21)
+- Skipped hand detection during test gesture
+- Continuous API calls during verification (spamming server)
+
+#### 4. Gesture Hallucination (Multiple API Calls)
+- Detection loop runs at ~30fps
+- Condition `elapsed >= GESTURE_RECORD_DURATION` was checked every frame
+- React state updates (`setIsRecordingGesture(false)`) are async
+- Multiple frames triggered classification before state updated = "thousands of detections"
+
+### Solutions Implemented
+
+#### 1. Added Test Gesture Button
+```tsx
+// Top-right of webcam
+<Button onClick={startTestGesture}>🖐️ Test Gesture</Button>
+```
+- 3-2-1 countdown
+- 3-second recording with "Show your hand..." wait phase
+- Single DTW API call
+- Auto-dismiss result after 3 seconds
+
+#### 2. Fixed Frame Format
+```tsx
+// extractHandLandmarks() - matches Training.tsx exactly
+const extractHandLandmarks = (hand) => {
+  const wrist = hand.keypoints[0];
+  const landmarks = hand.keypoints.map(kp => [
+    (kp.x - wrist.x) / 100,  // Normalized to wrist
+    (kp.y - wrist.y) / 100
+  ]);
+  return { landmarks };
+};
+
+// Frame format
+{
+  timestamp: elapsed,
+  left_hand: { landmarks: [[x,y], ...] } | null,
+  right_hand: { landmarks: [[x,y], ...] } | null
+}
+```
+
+#### 3. Simplified Detection Loop
+- Always detect hands (removed conditional skipping)
+- Always update `lastHandsRef` for async access
+- Draw all 21 keypoints like Training.tsx
+- Red dots during test, green dots normally
+
+#### 4. Record-Then-Classify Approach (Verification)
+**Old Flow (Bad)**:
+- Continuous detection throughout verification
+- Multiple API calls at random intervals
+- Unreliable results
+
+**New Flow (Fixed)**:
+1. Countdown 3-2-1
+2. **Recording Phase** (2 seconds): Collect frames, show "RECORDING GESTURE..." overlay
+3. **Classify Once**: Single API call with all collected frames
+4. **Speech Phase**: Show gesture result, prompt for speech
+5. **Final Summary**: PASS/FAIL with details
+
+#### 5. Ref-Based Classification Lock
+```tsx
+const isClassifyingGestureRef = useRef(false);
+
+// In detection loop:
+if (elapsed >= GESTURE_RECORD_DURATION && !isClassifyingGestureRef.current) {
+  isClassifyingGestureRef.current = true; // LOCK - prevents duplicate calls
+  const frames = [...gestureFramesRef.current];
+  gestureFramesRef.current = []; // Clear immediately
+  
+  classifyGestureDTW(frames).then(result => {
+    // Handle result once
+  });
+}
+
+// Reset on new verification:
+isClassifyingGestureRef.current = false;
+```
+
+### Visual Indicators Added
+- **Red pulsing overlay**: "RECORDING GESTURE... 2s" during recording phase
+- **Green/Yellow banner**: Shows detected gesture after classification
+- **Animated badges**: Gesture/Component/Speech status at bottom
+
+### Constants Updated
+- `GESTURE_RECORD_DURATION = 2000` (2 seconds)
+- `VERIFICATION_DURATION = 8000` (8 seconds total)
+- `LOCK_CONFIDENCE = 0.5` (50% threshold)
+
+### Files Modified
+- `src/pages/Monitor.tsx`:
+  - Added Test Gesture functionality
+  - Added `extractHandLandmarks()` function
+  - Added `lastHandsRef` for async hand access
+  - Added `isClassifyingGestureRef` to prevent multiple API calls
+  - Added recording phase states (`isRecordingGesture`, `gestureRecordingComplete`)
+  - Updated detection loop for record-then-classify
+  - Added visual overlays for recording phase
+  - Draw all 21 keypoints instead of 5
+  
+- `server.js`:
+  - Added detailed logging for classify requests
+  - Logs frame count, first frame structure, result with all probabilities
+
+### Current Status
+- ✅ Test Gesture button working
+- ✅ Frame format matches Training.tsx
+- ✅ All 21 keypoints drawn
+- ✅ Single API call per verification (ref lock)
+- ✅ Visual recording indicator
+- ✅ Auto-dismiss test results after 3s
+
+---
+
+## Next Steps (Priority Order)
+
+### 1. 🔴 Verify Gesture Accuracy
+- Test with real gestures: thumbs_up, good_job, etc.
+- Ensure DTW classification returns correct gesture
+- May need to retrain gestures if templates are stale
+
+### 2. 🟡 Component Detection Integration
+- Connect YOLO detection during verification
+- Lock component on first high-confidence detection
+- Show detected component in requirements panel
+
+### 3. 🟢 Database Integration
+- Move from localStorage to real database
+- Persist Work Instructions, Teams, Training data
+- Consider SQLite for simplicity or PostgreSQL for production
+
+### 4. 🔵 Reporting
+- Export verification reports
+- Track pass/fail rates per employee
+- Time-to-complete metrics
+
+---
+
+## Quick Reference
+
+### Start Development
+```bash
+cd /home/noclout/employee-monitor-view
+npm run dev      # Vite (port 8080)
+node server.js   # Backend (port 3000)
+```
+
+### Test Gesture
+1. Open Monitor page: http://localhost:8080/monitor/emp-001
+2. Click "🖐️ Test Gesture" button (top-right of webcam)
+3. Wait for 3-2-1 countdown
+4. Show gesture for 3 seconds
+5. See result with confidence %
+
+### Key Files
+- `src/pages/Monitor.tsx` - Live monitoring with verification
+- `src/pages/Training.tsx` - Gesture training UI
+- `gesture_workflow/scripts/dtw_gesture.py` - DTW classifier
+- `server.js` - Backend API
+
+
