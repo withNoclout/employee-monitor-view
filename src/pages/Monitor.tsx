@@ -118,6 +118,12 @@ const Monitor = () => {
   const recognitionRef = useRef<any>(null);
   const isListeningRef = useRef(false); // Track listening state for callbacks;
   
+  // DTW Gesture Sequence Collection
+  const gestureFramesRef = useRef<number[][]>([]); // Collect frames for DTW
+  const lastGestureApiCall = useRef<number>(0);
+  const GESTURE_API_INTERVAL = 500; // Call DTW API every 500ms
+  const MIN_FRAMES_FOR_DTW = 10; // Minimum frames before calling API
+  
   // Confidence threshold for locking gesture/component
   const LOCK_CONFIDENCE = 0.7; // 70% confidence to lock in
 
@@ -422,6 +428,29 @@ const Monitor = () => {
     return { gesture: bestGesture, confidence };
   }, [trainedGestures]);
 
+  // Classify gesture using DTW Server API (same as training/test)
+  const classifyGestureDTW = useCallback(async (frames: number[][]): Promise<{ gesture: string; confidence: number } | null> => {
+    if (frames.length < MIN_FRAMES_FOR_DTW) return null;
+    
+    try {
+      const response = await fetch('http://localhost:3000/api/gestures/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frames })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        if (result.prediction && result.confidence) {
+          return { gesture: result.prediction, confidence: result.confidence };
+        }
+      }
+    } catch (err) {
+      console.error('[DTW] Classification error:', err);
+    }
+    return null;
+  }, []);
+
   // Normalize gesture name for comparison (handles "GoodJob" vs "good_job" etc)
   const normalizeGestureName = (name: string): string => {
     return name
@@ -536,40 +565,61 @@ const Monitor = () => {
 
         let detectedGesture: string | null = lockedGesture; // Use locked gesture if available
         let gestureConfidence = lockedGesture ? 1.0 : 0; // Locked = 100% confidence
+        const now = Date.now();
 
-        hands.forEach(hand => {
+        // Process each detected hand
+        for (const hand of hands) {
           // Draw small green dots on fingertips only (minimal visual feedback)
-          // Fingertip indices: 4 (thumb), 8 (index), 12 (middle), 16 (ring), 20 (pinky)
           const fingertipIndices = [4, 8, 12, 16, 20];
           fingertipIndices.forEach(idx => {
             const kp = hand.keypoints[idx];
             if (kp) {
               ctx.beginPath();
               ctx.arc(kp.x, kp.y, 4, 0, 2 * Math.PI);
-              ctx.fillStyle = lockedGesture ? '#00ff00' : '#00ff88'; // Brighter green when locked
+              ctx.fillStyle = lockedGesture ? '#00ff00' : '#00ff88';
               ctx.fill();
             }
           });
           
-          // Classify gesture - only if not already locked
-          if (!lockedGesture) {
-            const features = extractFeatures(hand);
-            const result = classifyGesture(features);
-            if (result && result.confidence > 0.5) {
-              detectedGesture = result.gesture;
-              gestureConfidence = result.confidence;
+          // Collect frames for DTW - only if not already locked and verifying
+          if (!lockedGesture && isVerifying) {
+            // Extract frame data (21 landmarks x 3 coords = 63 values)
+            const frameData = hand.keypoints.map(kp => [kp.x, kp.y, (kp as any).z || 0]).flat();
+            gestureFramesRef.current.push(frameData);
+            
+            // Keep only last 50 frames (sliding window)
+            if (gestureFramesRef.current.length > 50) {
+              gestureFramesRef.current = gestureFramesRef.current.slice(-50);
+            }
+            
+            // Call DTW API periodically (not every frame)
+            if (now - lastGestureApiCall.current > GESTURE_API_INTERVAL && 
+                gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW) {
+              lastGestureApiCall.current = now;
               
-              // Log gesture for debugging
-              console.log(`[Gesture] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+              // Call DTW API (async, non-blocking)
+              classifyGestureDTW(gestureFramesRef.current).then(result => {
+                if (result && result.confidence > 0.5) {
+                  setCurrentGesture(result.gesture);
+                  console.log(`[DTW] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+                  
+                  // Check step verification with DTW result
+                  if (isVerifying && !lockedGesture) {
+                    checkStepVerification(result.gesture, result.confidence, currentComponents);
+                  }
+                }
+              });
             }
           }
-        });
+        }
 
-        setCurrentGesture(detectedGesture);
+        // Update current gesture display (may be overwritten by DTW async result)
+        if (!lockedGesture) {
+          // Keep showing locked gesture or last DTW result
+        }
 
         // Component Detection (throttled + ROI optimization) - SKIP if component already locked
         const shouldDetectComponent = !lockedComponent && isVerifying;
-        const now = Date.now();
         
         if (!lockedComponent && !isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
           lastDetectionTime.current = now;
@@ -905,6 +955,8 @@ const Monitor = () => {
     setCurrentWordIndex(0);
     setIsVerifying(false);
     setVerificationStartTime(null);
+    setCurrentGesture(null);
+    gestureFramesRef.current = []; // Clear DTW frames
   };
 
   // Countdown effect
