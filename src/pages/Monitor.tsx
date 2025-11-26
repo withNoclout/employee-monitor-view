@@ -325,12 +325,13 @@ const Monitor = () => {
     if (matchScore >= 0.7) { // 70% match threshold
       setSpeechVerified(true);
       if (isListening) {
+        isListeningRef.current = false;
         recognitionRef.current?.stop();
         setIsListening(false);
-        toast.success("Speech verified! ✓");
+        toast.success("✓ Speech Complete!");
       }
     }
-  }, [spokenText, isTaskActive, selectedTask, currentStepIndex]);
+  }, [spokenText, isTaskActive, selectedTask, currentStepIndex, isListening]);
 
   // Extract features from hand landmarks
   const extractFeatures = useCallback((hand: handPoseDetection.Hand): number[] => {
@@ -389,47 +390,50 @@ const Monitor = () => {
     let gestureMatch = !currentStep.gestureId; // If no gesture required, it's a match
     let componentMatch = !currentStep.componentId; // If no component required, it's a match
 
-    // Check gesture requirement - LOCK on first high-confidence match
+    // Check gesture requirement - ONLY lock when CORRECT gesture detected with high confidence
     if (currentStep.gestureId) {
       if (lockedGesture) {
-        // Already locked - check if it matches required
-        const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
-        gestureMatch = requiredGesture?.name.toLowerCase() === lockedGesture.toLowerCase();
+        // Already locked with correct gesture
+        gestureMatch = true;
       } else if (gesture && gestureConfidence >= LOCK_CONFIDENCE) {
-        // First high-confidence detection - LOCK IT
+        // Check if this is the REQUIRED gesture
         const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
         if (requiredGesture && gesture.toLowerCase() === requiredGesture.name.toLowerCase()) {
+          // CORRECT gesture detected - LOCK IT and mark as DONE
           setLockedGesture(gesture);
+          setGestureVerified(true);
           gestureMatch = true;
-          toast.success(`✓ Gesture "${gesture}" detected!`);
+          toast.success(`✓ Gesture "${gesture}" - Done!`);
         }
+        // If wrong gesture, don't lock - keep looking
       }
     }
 
-    // Check component requirement - LOCK on first high-confidence match
+    // Check component requirement - ONLY lock when CORRECT component detected
     if (currentStep.componentId) {
       if (lockedComponent) {
-        // Already locked - check if it matches required
-        const requiredComponent = trainedComponents.find((_, i) => `${i + 1}` === currentStep.componentId);
-        componentMatch = requiredComponent?.toLowerCase() === lockedComponent.toLowerCase();
+        // Already locked with correct component
+        componentMatch = true;
       } else if (components.length > 0) {
         const requiredComponent = trainedComponents.find((_, i) => `${i + 1}` === currentStep.componentId);
         if (requiredComponent) {
+          // Only lock if it's the REQUIRED component
           const found = components.find(c => 
             c.class.toLowerCase() === requiredComponent.toLowerCase() && c.confidence >= LOCK_CONFIDENCE
           );
           if (found) {
             setLockedComponent(found.class);
+            setComponentVerified(true);
             componentMatch = true;
-            toast.success(`✓ Component "${found.class}" detected!`);
+            toast.success(`✓ Component "${found.class}" - Done!`);
           }
         }
       }
     }
 
-    // Update individual verification states
-    setGestureVerified(gestureMatch);
-    setComponentVerified(componentMatch);
+    // Update verification states
+    if (gestureMatch && currentStep.gestureId) setGestureVerified(true);
+    if (componentMatch && currentStep.componentId) setComponentVerified(true);
 
     // Check speech separately (handled in useEffect)
     const speechMatch = !currentStep.speechPhrase || speechVerified;
