@@ -108,8 +108,13 @@ const Monitor = () => {
   const [speechVerified, setSpeechVerified] = useState(false);
   const [gestureVerified, setGestureVerified] = useState(false);
   const [componentVerified, setComponentVerified] = useState(false);
+  const [lockedGesture, setLockedGesture] = useState<string | null>(null); // First high-confidence gesture detected
+  const [lockedComponent, setLockedComponent] = useState<string | null>(null); // First high-confidence component detected
   const recognitionRef = useRef<any>(null);
   const isListeningRef = useRef(false); // Track listening state for callbacks;
+  
+  // Confidence threshold for locking gesture/component
+  const LOCK_CONFIDENCE = 0.7; // 70% confidence to lock in
 
   // Performance optimization - frame skipping
   const frameCountRef = useRef<number>(0);
@@ -373,9 +378,9 @@ const Monitor = () => {
     return { gesture: bestGesture, confidence };
   }, [trainedGestures]);
 
-  // Check if current step requirements are met
-  const checkStepVerification = useCallback((gesture: string | null, components: Detection[]) => {
-    if (!selectedTask || !isTaskActive) return false;
+  // Check if current step requirements are met and lock gesture/component on first high-confidence match
+  const checkStepVerification = useCallback((gesture: string | null, gestureConfidence: number, components: Detection[]) => {
+    if (!selectedTask || !isTaskActive || !isVerifying) return false;
     
     const currentTaskSteps = getStepsForTask(selectedTask);
     const currentStep = currentTaskSteps[currentStepIndex];
@@ -384,22 +389,41 @@ const Monitor = () => {
     let gestureMatch = !currentStep.gestureId; // If no gesture required, it's a match
     let componentMatch = !currentStep.componentId; // If no component required, it's a match
 
-    // Check gesture requirement
-    if (currentStep.gestureId && gesture) {
-      const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
-      if (requiredGesture && gesture.toLowerCase() === requiredGesture.name.toLowerCase()) {
-        gestureMatch = true;
+    // Check gesture requirement - LOCK on first high-confidence match
+    if (currentStep.gestureId) {
+      if (lockedGesture) {
+        // Already locked - check if it matches required
+        const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
+        gestureMatch = requiredGesture?.name.toLowerCase() === lockedGesture.toLowerCase();
+      } else if (gesture && gestureConfidence >= LOCK_CONFIDENCE) {
+        // First high-confidence detection - LOCK IT
+        const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
+        if (requiredGesture && gesture.toLowerCase() === requiredGesture.name.toLowerCase()) {
+          setLockedGesture(gesture);
+          gestureMatch = true;
+          toast.success(`✓ Gesture "${gesture}" detected!`);
+        }
       }
     }
 
-    // Check component requirement
-    if (currentStep.componentId && components.length > 0) {
-      const requiredComponent = trainedComponents.find((_, i) => `${i + 1}` === currentStep.componentId);
-      if (requiredComponent) {
-        const found = components.some(c => 
-          c.class.toLowerCase() === requiredComponent.toLowerCase() && c.confidence > 0.5
-        );
-        if (found) componentMatch = true;
+    // Check component requirement - LOCK on first high-confidence match
+    if (currentStep.componentId) {
+      if (lockedComponent) {
+        // Already locked - check if it matches required
+        const requiredComponent = trainedComponents.find((_, i) => `${i + 1}` === currentStep.componentId);
+        componentMatch = requiredComponent?.toLowerCase() === lockedComponent.toLowerCase();
+      } else if (components.length > 0) {
+        const requiredComponent = trainedComponents.find((_, i) => `${i + 1}` === currentStep.componentId);
+        if (requiredComponent) {
+          const found = components.find(c => 
+            c.class.toLowerCase() === requiredComponent.toLowerCase() && c.confidence >= LOCK_CONFIDENCE
+          );
+          if (found) {
+            setLockedComponent(found.class);
+            componentMatch = true;
+            toast.success(`✓ Component "${found.class}" detected!`);
+          }
+        }
       }
     }
 
@@ -411,7 +435,7 @@ const Monitor = () => {
     const speechMatch = !currentStep.speechPhrase || speechVerified;
 
     return gestureMatch && componentMatch && speechMatch;
-  }, [selectedTask, isTaskActive, currentStepIndex, trainedGestures, trainedComponents, speechVerified]);
+  }, [selectedTask, isTaskActive, isVerifying, currentStepIndex, trainedGestures, trainedComponents, speechVerified, lockedGesture, lockedComponent]);
 
   // Main Detection Loop
   useEffect(() => {
@@ -436,17 +460,20 @@ const Monitor = () => {
         frameCountRef.current++;
         const shouldProcessFrame = frameCountRef.current % HAND_FRAME_SKIP === 0;
 
-        // Hand Detection (with frame skipping)
+        // Hand Detection (with frame skipping) - SKIP if gesture already locked
         let hands: handPoseDetection.Hand[] = [];
-        if (shouldProcessFrame) {
+        const shouldDetectGesture = !lockedGesture && isVerifying;
+        
+        if (shouldProcessFrame && (shouldDetectGesture || !isVerifying)) {
           hands = await detector.estimateHands(video);
           setHandsDetected(hands.length);
-        } else {
-          // Use cached hand count
-          hands = []; // Skip detection this frame
+        } else if (!shouldDetectGesture && isVerifying) {
+          // Gesture locked - skip hand detection to save CPU
+          hands = [];
         }
 
-        let detectedGesture: string | null = null;
+        let detectedGesture: string | null = lockedGesture; // Use locked gesture if available
+        let gestureConfidence = lockedGesture ? 1.0 : 0; // Locked = 100% confidence
 
         hands.forEach(hand => {
           // Draw small green dots on fingertips only (minimal visual feedback)
@@ -457,29 +484,32 @@ const Monitor = () => {
             if (kp) {
               ctx.beginPath();
               ctx.arc(kp.x, kp.y, 4, 0, 2 * Math.PI);
-              ctx.fillStyle = '#00ff88';
+              ctx.fillStyle = lockedGesture ? '#00ff00' : '#00ff88'; // Brighter green when locked
               ctx.fill();
             }
           });
           
-          // Classify gesture (data recorded in background)
-          const features = extractFeatures(hand);
-          const result = classifyGesture(features);
-          if (result && result.confidence > 0.5) {
-            detectedGesture = result.gesture;
-            
-            // Log gesture for debugging (can be removed in production)
-            console.log(`[Gesture] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+          // Classify gesture - only if not already locked
+          if (!lockedGesture) {
+            const features = extractFeatures(hand);
+            const result = classifyGesture(features);
+            if (result && result.confidence > 0.5) {
+              detectedGesture = result.gesture;
+              gestureConfidence = result.confidence;
+              
+              // Log gesture for debugging
+              console.log(`[Gesture] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+            }
           }
         });
 
         setCurrentGesture(detectedGesture);
 
-        // Component Detection (throttled + ROI optimization)
-        // ROI = Region of Interest - only detect in center areas (2,4,5,6,8 of 3x3 grid)
-        // Adaptive frequency: fast (500ms) when searching, slow (2000ms) when found
+        // Component Detection (throttled + ROI optimization) - SKIP if component already locked
+        const shouldDetectComponent = !lockedComponent && isVerifying;
         const now = Date.now();
-        if (!isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
+        
+        if (!lockedComponent && !isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
           lastDetectionTime.current = now;
           setIsDetecting(true);
 
@@ -621,27 +651,9 @@ const Monitor = () => {
           ctx.fillText(`${det.class} ${(det.confidence * 100).toFixed(0)}%`, x1, y1 - 5);
         });
 
-        // Auto-verification logic
-        if (isTaskActive && selectedTask) {
-          const isVerified = checkStepVerification(detectedGesture, currentComponents);
-          
-          if (isVerified) {
-            if (verificationHoldTime.current === 0) {
-              verificationHoldTime.current = now;
-            } else if (now - verificationHoldTime.current >= HOLD_DURATION) {
-              // Step verified!
-              setStepVerified(true);
-              handleCompleteStep();
-              verificationHoldTime.current = 0;
-            }
-            
-            // Draw verification progress
-            const progress = Math.min(1, (now - verificationHoldTime.current) / HOLD_DURATION);
-            ctx.fillStyle = 'rgba(0, 255, 136, 0.3)';
-            ctx.fillRect(0, canvas.height - 10, canvas.width * progress, 10);
-          } else {
-            verificationHoldTime.current = 0;
-          }
+        // Auto-verification logic - check step requirements
+        if (isTaskActive && selectedTask && isVerifying) {
+          checkStepVerification(detectedGesture, gestureConfidence, currentComponents);
         }
       }
 
@@ -650,7 +662,7 @@ const Monitor = () => {
 
     detect();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isLive, detector, currentComponents, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting]);
+  }, [isLive, detector, currentComponents, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting, isVerifying, lockedGesture, lockedComponent]);
 
   // Load Work Instructions and build task list
   useEffect(() => {
@@ -822,7 +834,10 @@ const Monitor = () => {
     setSpeechVerified(false);
     setGestureVerified(false);
     setComponentVerified(false);
+    setLockedGesture(null);
+    setLockedComponent(null);
     setSpokenText("");
+    setInterimText("");
     setSpokenWords([]);
     setCurrentWordIndex(0);
     setIsVerifying(false);
@@ -864,24 +879,32 @@ const Monitor = () => {
     const checkInterval = setInterval(() => {
       const elapsed = Date.now() - verificationStartTime;
       
-      // Check if all verifications passed
+      // Check if all verifications passed (gesture/component are locked once detected)
       const currentStep = selectedTask ? getStepsForTask(selectedTask)[currentStepIndex] : null;
-      const allVerified = 
-        (gestureVerified || !currentStep?.gestureId) &&
-        (componentVerified || !currentStep?.componentId) &&
-        (speechVerified || !currentStep?.speechPhrase);
+      
+      // Gesture verified = locked or not required
+      const gestureOk = !currentStep?.gestureId || lockedGesture !== null;
+      // Component verified = locked or not required  
+      const componentOk = !currentStep?.componentId || lockedComponent !== null;
+      // Speech verified = matched or not required
+      const speechOk = !currentStep?.speechPhrase || speechVerified;
+      
+      const allVerified = gestureOk && componentOk && speechOk;
       
       if (allVerified) {
         // Success! Move to next step
         setIsVerifying(false);
+        isListeningRef.current = false;
         setIsListening(false);
         if (recognitionRef.current) {
           recognitionRef.current.stop();
         }
+        toast.success("✓ Step Complete!");
         handleCompleteStep();
       } else if (elapsed >= VERIFICATION_DURATION) {
         // Time's up - failed verification
         setIsVerifying(false);
+        isListeningRef.current = false;
         setIsListening(false);
         if (recognitionRef.current) {
           recognitionRef.current.stop();
@@ -889,8 +912,8 @@ const Monitor = () => {
         
         // Show what was missing
         const missing = [];
-        if (currentStep?.gestureId && !gestureVerified) missing.push("gesture");
-        if (currentStep?.componentId && !componentVerified) missing.push("component");
+        if (currentStep?.gestureId && !lockedGesture) missing.push("gesture");
+        if (currentStep?.componentId && !lockedComponent) missing.push("component");
         if (currentStep?.speechPhrase && !speechVerified) missing.push("speech");
         
         toast.error(`Time's up! Missing: ${missing.join(", ")}. Try again.`);
@@ -899,7 +922,7 @@ const Monitor = () => {
     }, 100);
     
     return () => clearInterval(checkInterval);
-  }, [isVerifying, verificationStartTime, gestureVerified, componentVerified, speechVerified, selectedTask, currentStepIndex]);
+  }, [isVerifying, verificationStartTime, speechVerified, selectedTask, currentStepIndex, lockedGesture, lockedComponent]);
 
   const handleCompleteStep = () => {
     if (!selectedTask) return;
@@ -1170,24 +1193,24 @@ const Monitor = () => {
                             {/* Spoken feedback */}
                             <div className="text-center mt-3 text-sm text-white/60">
                               <Mic className="w-4 h-4 inline mr-1 animate-pulse text-red-500" />
-                              {spokenText || "Listening..."}
+                              {spokenText || interimText || "Listening..."}
                             </div>
                           </div>
                         </div>
                       )}
                       
-                      {/* Verification status badges */}
+                      {/* Verification status badges - show LOCKED status */}
                       <div className="absolute bottom-4 left-4 right-4 flex justify-center gap-3">
                         {currentTaskSteps[currentStepIndex]?.gestureId && (
-                          <Badge className={`text-sm px-3 py-1 ${gestureVerified ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}>
+                          <Badge className={`text-sm px-3 py-1 ${lockedGesture ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}>
                             <Hand className="w-4 h-4 mr-1" />
-                            {gestureVerified ? '✓ Gesture' : 'Show Gesture'}
+                            {lockedGesture ? `✓ ${lockedGesture}` : 'Show Gesture'}
                           </Badge>
                         )}
                         {currentTaskSteps[currentStepIndex]?.componentId && (
-                          <Badge className={`text-sm px-3 py-1 ${componentVerified ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}>
+                          <Badge className={`text-sm px-3 py-1 ${lockedComponent ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}>
                             <Box className="w-4 h-4 mr-1" />
-                            {componentVerified ? '✓ Component' : 'Show Component'}
+                            {lockedComponent ? `✓ ${lockedComponent}` : 'Show Component'}
                           </Badge>
                         )}
                         {currentTaskSteps[currentStepIndex]?.speechPhrase && (
@@ -1256,7 +1279,7 @@ const Monitor = () => {
                         </Button>
                       )}
                       <Badge variant="outline" className="text-xs">
-                        {[gestureVerified, componentVerified, speechVerified].filter(Boolean).length}/
+                        {[lockedGesture, lockedComponent, speechVerified].filter(Boolean).length}/
                         {[currentTaskSteps[currentStepIndex]?.gestureId, 
                           currentTaskSteps[currentStepIndex]?.componentId, 
                           currentTaskSteps[currentStepIndex]?.speechPhrase].filter(Boolean).length || 1} Verified
@@ -1270,47 +1293,51 @@ const Monitor = () => {
                   </div>
                   
                   <div className="grid grid-cols-3 gap-4">
-                    {/* Gesture Requirement */}
+                    {/* Gesture Requirement - shows LOCKED status */}
                     <div className={`p-3 rounded-lg border-2 transition-all ${
                       !currentTaskSteps[currentStepIndex]?.gestureId 
                         ? 'border-muted bg-muted/20 opacity-50' 
-                        : gestureVerified 
+                        : lockedGesture
                           ? 'border-green-500 bg-green-500/10' 
                           : isVerifying
                             ? 'border-orange-500 bg-orange-500/10 animate-pulse'
                             : 'border-orange-500/50 bg-orange-500/5'
                     }`}>
                       <div className="flex items-center gap-2 mb-2">
-                        <Hand className={`w-5 h-5 ${gestureVerified ? 'text-green-500' : 'text-orange-500'}`} />
+                        <Hand className={`w-5 h-5 ${lockedGesture ? 'text-green-500' : 'text-orange-500'}`} />
                         <span className="font-medium text-sm">Gesture</span>
-                        {gestureVerified && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
+                        {lockedGesture && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
                       </div>
                       <p className="text-sm font-medium">
-                        {currentTaskSteps[currentStepIndex]?.gestureId 
-                          ? trainedGestures.find(g => g.id === currentTaskSteps[currentStepIndex]?.gestureId)?.name || currentTaskSteps[currentStepIndex]?.gestureId
-                          : 'None required'}
+                        {lockedGesture 
+                          ? `✓ ${lockedGesture}`
+                          : currentTaskSteps[currentStepIndex]?.gestureId 
+                            ? trainedGestures.find(g => g.id === currentTaskSteps[currentStepIndex]?.gestureId)?.name || currentTaskSteps[currentStepIndex]?.gestureId
+                            : 'None required'}
                       </p>
                     </div>
 
-                    {/* Component Requirement */}
+                    {/* Component Requirement - shows LOCKED status */}
                     <div className={`p-3 rounded-lg border-2 transition-all ${
                       !currentTaskSteps[currentStepIndex]?.componentId 
                         ? 'border-muted bg-muted/20 opacity-50' 
-                        : componentVerified 
+                        : lockedComponent 
                           ? 'border-green-500 bg-green-500/10' 
                           : isVerifying
                             ? 'border-orange-500 bg-orange-500/10 animate-pulse'
                             : 'border-orange-500/50 bg-orange-500/5'
                     }`}>
                       <div className="flex items-center gap-2 mb-2">
-                        <Box className={`w-5 h-5 ${componentVerified ? 'text-green-500' : 'text-orange-500'}`} />
+                        <Box className={`w-5 h-5 ${lockedComponent ? 'text-green-500' : 'text-orange-500'}`} />
                         <span className="font-medium text-sm">Component</span>
-                        {componentVerified && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
+                        {lockedComponent && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
                       </div>
                       <p className="text-sm font-medium">
-                        {currentTaskSteps[currentStepIndex]?.componentId 
-                          ? trainedComponents[parseInt(currentTaskSteps[currentStepIndex]?.componentId || '0') - 1] || 'Component'
-                          : 'None required'}
+                        {lockedComponent 
+                          ? `✓ ${lockedComponent}`
+                          : currentTaskSteps[currentStepIndex]?.componentId 
+                            ? trainedComponents[parseInt(currentTaskSteps[currentStepIndex]?.componentId || '0') - 1] || 'Component'
+                            : 'None required'}
                       </p>
                     </div>
 
