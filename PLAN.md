@@ -285,12 +285,80 @@ Enhance the Monitor page with comprehensive task verification:
 - ✅ All verification states properly managed
 - 🔄 Ready for testing
 
+---
 
-- Centroid approach preserves classification quality
+## Session: November 26, 2025 (Evening) - Speech Recognition Debug
+
+### Problem
+The "Test Speech" button wasn't detecting any words. User couldn't see what the website was hearing.
+
+### Root Cause
+1. **Stale Closure Issue**: The `useEffect` that initialized speech recognition had multiple dependencies (`isListening`, `spokenText`, etc.) causing it to recreate the recognition object frequently
+2. **Callback State Capture**: The `onresult` and `onend` callbacks captured stale state values
+3. **No Interim Results Display**: Only final (confirmed) text was shown - no real-time feedback
+
+### Solutions Implemented
+
+#### 1. Single Initialization Pattern
+```tsx
+// OLD - recreated on every state change
+useEffect(() => { ... }, [isListening, spokenText, karaokeWords, ...]);
+
+// NEW - initialize once on mount
+useEffect(() => { ... }, []); // Empty deps
+```
+
+#### 2. Ref-Based State Tracking
+```tsx
+const isListeningRef = useRef(false); // For callbacks
+const [isListening, setIsListening] = useState(false); // For UI
+
+// Use ref in callbacks (always current value)
+recognition.onend = () => {
+  if (isListeningRef.current) {
+    recognition.start(); // Auto-restart
+  }
+};
+```
+
+#### 3. Interim + Final Text Display
+```tsx
+const [spokenText, setSpokenText] = useState(""); // Final confirmed
+const [interimText, setInterimText] = useState(""); // Real-time
+
+// In onresult:
+setInterimText(interimTranscript); // Shows immediately (yellow)
+if (finalTranscript) {
+  setSpokenText(prev => prev + finalTranscript); // Confirmed (white)
+}
+```
+
+#### 4. Enhanced Test UI
+- **Yellow text**: Real-time interim words (what's being processed)
+- **White text**: Final confirmed words
+- **Red pulsing dot**: Recording indicator
+- Better error handling with toast notifications
+
+### Files Modified
+- `src/pages/Monitor.tsx`:
+  - Added `interimText` state
+  - Added `isListeningRef` for callback state tracking
+  - Rewrote speech recognition initialization (empty deps)
+  - Updated `toggleListening()` to manage ref
+  - Enhanced Test Speech overlay with interim display
+
+### Testing Instructions
+1. Start dev server: `npm run dev`
+2. Go to Monitor page for emp-001
+3. Click "Test Speech" button (top-right of camera)
+4. Speak into microphone
+5. Yellow text = what's being heard in real-time
+6. White text = confirmed words
 
 ### Current Status
-- ✅ DTW performance optimized
-- ✅ Persistent inference process implemented
-- ✅ API response time < 25ms
-- ✅ Ready for production use
+- ✅ Speech recognition properly initialized once
+- ✅ Ref-based state for reliable callbacks
+- ✅ Real-time interim text display
+- ✅ Clear visual feedback
+- 🔄 Ready for testing
 

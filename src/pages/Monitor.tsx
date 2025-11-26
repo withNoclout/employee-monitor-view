@@ -74,6 +74,17 @@ const Monitor = () => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isTaskActive, setIsTaskActive] = useState(false);
 
+  // Countdown & Step Verification State
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationStartTime, setVerificationStartTime] = useState<number | null>(null);
+  const VERIFICATION_DURATION = 5000; // 5 seconds to perform gesture + speech
+
+  // Karaoke State
+  const [karaokeWords, setKaraokeWords] = useState<string[]>([]);
+  const [spokenWords, setSpokenWords] = useState<string[]>([]);
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+
   // Detection State
   const [detector, setDetector] = useState<handPoseDetection.HandDetector | null>(null);
   const [isLoadingModel, setIsLoadingModel] = useState(true);
@@ -93,10 +104,12 @@ const Monitor = () => {
   // Speech Recognition State
   const [isListening, setIsListening] = useState(false);
   const [spokenText, setSpokenText] = useState("");
+  const [interimText, setInterimText] = useState(""); // Real-time interim results
   const [speechVerified, setSpeechVerified] = useState(false);
   const [gestureVerified, setGestureVerified] = useState(false);
   const [componentVerified, setComponentVerified] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const isListeningRef = useRef(false); // Track listening state for callbacks;
 
   // Performance optimization - frame skipping
   const frameCountRef = useRef<number>(0);
@@ -146,61 +159,80 @@ const Monitor = () => {
     }
   }, []);
 
-  // Initialize Speech Recognition
+  // Initialize Speech Recognition - only once on mount
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event: any) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-        
-        const fullText = (spokenText + ' ' + finalTranscript).trim();
-        if (finalTranscript) {
-          setSpokenText(fullText);
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error !== 'no-speech') {
-          setIsListening(false);
-        }
-      };
-
-      recognition.onend = () => {
-        // Restart if still listening
-        if (isListening && recognitionRef.current) {
-          try {
-            recognitionRef.current.start();
-          } catch (e) {
-            // Already started
-          }
-        }
-      };
-
-      recognitionRef.current = recognition;
+    if (!SpeechRecognition) {
+      console.warn('Speech recognition not supported');
+      return;
     }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      console.log('Speech recognition started');
+    };
+
+    recognition.onresult = (event: any) => {
+      let finalTranscript = '';
+      let interimTranscript = '';
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      
+      console.log('Speech result:', { final: finalTranscript, interim: interimTranscript });
+      
+      // Update interim text immediately (shows real-time what's being heard)
+      setInterimText(interimTranscript);
+      
+      // Append final transcript to spoken text
+      if (finalTranscript.trim()) {
+        setSpokenText(prev => (prev + ' ' + finalTranscript).trim());
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      // Don't stop on 'no-speech' or 'aborted' - these are expected
+      if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        toast.error(`Speech error: ${event.error}`);
+        setIsListening(false);
+        isListeningRef.current = false;
+      }
+    };
+
+    recognition.onend = () => {
+      console.log('Speech recognition ended, isListening:', isListeningRef.current);
+      // Auto-restart if we're still supposed to be listening
+      if (isListeningRef.current) {
+        try {
+          recognition.start();
+        } catch (e) {
+          console.log('Could not restart recognition:', e);
+        }
+      }
+    };
+
+    recognitionRef.current = recognition;
+    console.log('Speech recognition initialized');
 
     return () => {
       if (recognitionRef.current) {
+        isListeningRef.current = false;
         recognitionRef.current.stop();
       }
     };
-  }, [isListening, spokenText]);
+  }, []); // Empty deps - only initialize once
 
   // Toggle speech recognition
   const toggleListening = () => {
@@ -210,14 +242,23 @@ const Monitor = () => {
     }
 
     if (isListening) {
+      isListeningRef.current = false;
       recognitionRef.current.stop();
       setIsListening(false);
+      setInterimText("");
     } else {
       setSpokenText("");
+      setInterimText("");
       setSpeechVerified(false);
-      recognitionRef.current.start();
-      setIsListening(true);
-      toast.info("Listening... Speak the verification phrase");
+      isListeningRef.current = true;
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+        toast.info("Listening... Speak now!");
+      } catch (e) {
+        console.error('Failed to start recognition:', e);
+        toast.error("Failed to start speech recognition");
+      }
     }
   };
 
@@ -732,11 +773,16 @@ const Monitor = () => {
     setCurrentStepIndex(0);
     setIsTaskActive(false);
     setStepVerified(false);
+    setIsVerifying(false);
+    setCountdown(null);
     // Reset all verification states
     setSpeechVerified(false);
     setGestureVerified(false);
     setComponentVerified(false);
     setSpokenText("");
+    setSpokenWords([]);
+    setKaraokeWords([]);
+    setCurrentWordIndex(0);
     if (recognitionRef.current && isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
@@ -749,12 +795,111 @@ const Monitor = () => {
     setCurrentStepIndex(0);
     setStepVerified(false);
     // Reset all verification states for first step
+    resetStepVerification();
+    // Start countdown for first step
+    startStepCountdown();
+  };
+
+  // Start countdown before step verification
+  const startStepCountdown = () => {
+    setCountdown(3);
+    setIsVerifying(false);
+    
+    // Prepare karaoke words from current step's speech phrase
+    const currentStep = selectedTask ? getStepsForTask(selectedTask)[currentStepIndex] : null;
+    if (currentStep?.speechPhrase) {
+      const words = currentStep.speechPhrase.split(/\s+/).filter(w => w.length > 0);
+      setKaraokeWords(words);
+    } else {
+      setKaraokeWords([]);
+    }
+    setCurrentWordIndex(0);
+    setSpokenWords([]);
+  };
+
+  // Reset step verification states
+  const resetStepVerification = () => {
     setSpeechVerified(false);
     setGestureVerified(false);
     setComponentVerified(false);
     setSpokenText("");
-    toast.info("Task started! Complete the required actions.");
+    setSpokenWords([]);
+    setCurrentWordIndex(0);
+    setIsVerifying(false);
+    setVerificationStartTime(null);
   };
+
+  // Countdown effect
+  useEffect(() => {
+    if (countdown === null) return;
+    
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else {
+      // Countdown finished - start verification
+      setCountdown(null);
+      setIsVerifying(true);
+      setVerificationStartTime(Date.now());
+      
+      // Start speech recognition automatically
+      if (recognitionRef.current) {
+        setSpokenText("");
+        try {
+          recognitionRef.current.start();
+          setIsListening(true);
+        } catch (e) {
+          console.error("Failed to start speech recognition:", e);
+        }
+      }
+      
+      toast.info("GO! Perform gesture and speak the phrase!");
+    }
+  }, [countdown]);
+
+  // Verification timeout - check if all requirements met
+  useEffect(() => {
+    if (!isVerifying || !verificationStartTime) return;
+    
+    const checkInterval = setInterval(() => {
+      const elapsed = Date.now() - verificationStartTime;
+      
+      // Check if all verifications passed
+      const currentStep = selectedTask ? getStepsForTask(selectedTask)[currentStepIndex] : null;
+      const allVerified = 
+        (gestureVerified || !currentStep?.gestureId) &&
+        (componentVerified || !currentStep?.componentId) &&
+        (speechVerified || !currentStep?.speechPhrase);
+      
+      if (allVerified) {
+        // Success! Move to next step
+        setIsVerifying(false);
+        setIsListening(false);
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+        }
+        handleCompleteStep();
+      } else if (elapsed >= VERIFICATION_DURATION) {
+        // Time's up - failed verification
+        setIsVerifying(false);
+        setIsListening(false);
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+        }
+        
+        // Show what was missing
+        const missing = [];
+        if (currentStep?.gestureId && !gestureVerified) missing.push("gesture");
+        if (currentStep?.componentId && !componentVerified) missing.push("component");
+        if (currentStep?.speechPhrase && !speechVerified) missing.push("speech");
+        
+        toast.error(`Time's up! Missing: ${missing.join(", ")}. Try again.`);
+        resetStepVerification();
+      }
+    }, 100);
+    
+    return () => clearInterval(checkInterval);
+  }, [isVerifying, verificationStartTime, gestureVerified, componentVerified, speechVerified, selectedTask, currentStepIndex]);
 
   const handleCompleteStep = () => {
     if (!selectedTask) return;
@@ -765,18 +910,17 @@ const Monitor = () => {
     if (currentStepIndex < totalSteps - 1) {
       setCurrentStepIndex(prev => prev + 1);
       setStepVerified(false);
-      // Reset verification states for next step
-      setSpeechVerified(false);
-      setGestureVerified(false);
-      setComponentVerified(false);
-      setSpokenText("");
-      if (recognitionRef.current && isListening) {
-        recognitionRef.current.stop();
-        setIsListening(false);
-      }
-      toast.success(`Step ${currentStepIndex + 1} verified!`);
+      // Reset and start countdown for next step
+      resetStepVerification();
+      toast.success(`Step ${currentStepIndex + 1} verified! ✓`);
+      
+      // Auto-start next step countdown after a brief pause
+      setTimeout(() => {
+        startStepCountdown();
+      }, 1500);
     } else {
       setIsTaskActive(false);
+      setIsVerifying(false);
       if (recognitionRef.current && isListening) {
         recognitionRef.current.stop();
         setIsListening(false);
@@ -936,6 +1080,15 @@ const Monitor = () => {
                   <div className="absolute top-3 right-3 flex gap-2">
                     <Button 
                       size="sm" 
+                      variant={isListening ? "destructive" : "secondary"}
+                      onClick={toggleListening}
+                      className={isListening ? "animate-pulse" : ""}
+                    >
+                      {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                      <span className="ml-1 text-xs">{isListening ? "Stop" : "Test Speech"}</span>
+                    </Button>
+                    <Button 
+                      size="sm" 
                       variant="secondary"
                       onClick={() => setIsLive(!isLive)}
                     >
@@ -943,17 +1096,124 @@ const Monitor = () => {
                     </Button>
                   </div>
                   
-                  {/* Task Overlay */}
-                  {isTaskActive && selectedTask && (
+                  {/* Test Speech Display - Shows what website hears */}
+                  {isListening && !isVerifying && (
+                    <div className="absolute bottom-4 left-4 right-4 z-10">
+                      <div className="bg-black/90 rounded-xl px-5 py-4 border border-red-500/30">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                          <span className="text-red-400 text-sm font-medium">LISTENING</span>
+                          <span className="text-white/40 text-xs ml-auto">Speak into your microphone</span>
+                        </div>
+                        {/* Show interim (real-time) text in yellow */}
+                        {interimText && (
+                          <p className="text-yellow-400 text-xl mb-1 animate-pulse">
+                            {interimText}
+                          </p>
+                        )}
+                        {/* Show final (confirmed) text in white */}
+                        <p className="text-white/70 text-lg min-h-[28px]">
+                          {spokenText || (interimText ? "" : "Say something...")}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Countdown Overlay */}
+                  {countdown !== null && (
+                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-20">
+                      <div className="text-center">
+                        <div className="text-9xl font-bold text-white animate-pulse">
+                          {countdown}
+                        </div>
+                        <p className="text-2xl text-white/80 mt-4">Get Ready!</p>
+                        <p className="text-lg text-white/60 mt-2">
+                          Prepare to perform gesture and speak the phrase
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Verification Timer + Karaoke Overlay */}
+                  {isVerifying && isTaskActive && selectedTask && (
+                    <div className="absolute inset-0 pointer-events-none z-10">
+                      {/* Timer bar at top */}
+                      <div className="absolute top-0 left-0 right-0 h-2 bg-black/50">
+                        <div 
+                          className="h-full bg-gradient-to-r from-green-500 to-yellow-500 transition-all duration-100"
+                          style={{
+                            width: `${Math.max(0, 100 - ((Date.now() - (verificationStartTime || 0)) / VERIFICATION_DURATION) * 100)}%`
+                          }}
+                        />
+                      </div>
+                      
+                      {/* Karaoke words display */}
+                      {karaokeWords.length > 0 && (
+                        <div className="absolute bottom-20 left-0 right-0 flex justify-center">
+                          <div className="bg-black/80 rounded-2xl px-6 py-4 mx-4">
+                            <div className="flex flex-wrap justify-center gap-2 text-2xl font-bold">
+                              {karaokeWords.map((word, idx) => (
+                                <span
+                                  key={idx}
+                                  className={`transition-all duration-300 ${
+                                    idx < currentWordIndex
+                                      ? 'text-green-400 scale-95'
+                                      : idx === currentWordIndex
+                                        ? 'text-yellow-400 scale-110 animate-pulse'
+                                        : 'text-white/50'
+                                  }`}
+                                >
+                                  {word}
+                                </span>
+                              ))}
+                            </div>
+                            {/* Spoken feedback */}
+                            <div className="text-center mt-3 text-sm text-white/60">
+                              <Mic className="w-4 h-4 inline mr-1 animate-pulse text-red-500" />
+                              {spokenText || "Listening..."}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Verification status badges */}
+                      <div className="absolute bottom-4 left-4 right-4 flex justify-center gap-3">
+                        {currentTaskSteps[currentStepIndex]?.gestureId && (
+                          <Badge className={`text-sm px-3 py-1 ${gestureVerified ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}>
+                            <Hand className="w-4 h-4 mr-1" />
+                            {gestureVerified ? '✓ Gesture' : 'Show Gesture'}
+                          </Badge>
+                        )}
+                        {currentTaskSteps[currentStepIndex]?.componentId && (
+                          <Badge className={`text-sm px-3 py-1 ${componentVerified ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}>
+                            <Box className="w-4 h-4 mr-1" />
+                            {componentVerified ? '✓ Component' : 'Show Component'}
+                          </Badge>
+                        )}
+                        {currentTaskSteps[currentStepIndex]?.speechPhrase && (
+                          <Badge className={`text-sm px-3 py-1 ${speechVerified ? 'bg-green-500' : 'bg-blue-500 animate-pulse'}`}>
+                            <Volume2 className="w-4 h-4 mr-1" />
+                            {speechVerified ? '✓ Speech' : 'Say Phrase'}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Task Overlay (when not verifying) */}
+                  {isTaskActive && selectedTask && !isVerifying && countdown === null && (
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                       <div className="text-white">
                         <p className="text-sm opacity-70">Step {currentStepIndex + 1} of {currentTaskSteps.length}</p>
                         <p className="text-lg font-medium">{currentTaskSteps[currentStepIndex]?.description}</p>
-                        {(currentTaskSteps[currentStepIndex]?.gestureId || currentTaskSteps[currentStepIndex]?.componentId) && (
-                          <p className="text-sm text-green-400 mt-1">
-                            Hold for 2 seconds to verify...
-                          </p>
-                        )}
+                        <Button 
+                          size="sm" 
+                          className="mt-2"
+                          onClick={startStepCountdown}
+                        >
+                          <PlayCircle className="w-4 h-4 mr-1" />
+                          Start Step Verification
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -963,19 +1223,50 @@ const Monitor = () => {
 
             {/* Task Requirements Panel - Below Webcam */}
             {isTaskActive && selectedTask && currentTaskSteps[currentStepIndex] && (
-              <Card className="border-2 border-primary/20 bg-gradient-to-r from-primary/5 to-transparent">
+              <Card className={`border-2 transition-all ${
+                isVerifying 
+                  ? 'border-yellow-500/50 bg-yellow-500/5' 
+                  : 'border-primary/20 bg-gradient-to-r from-primary/5 to-transparent'
+              }`}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-semibold text-sm flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-primary" />
-                      Step {currentStepIndex + 1} Requirements
+                      {isVerifying ? (
+                        <>
+                          <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />
+                          Verifying Step {currentStepIndex + 1}...
+                        </>
+                      ) : countdown !== null ? (
+                        <>
+                          <Clock className="w-4 h-4 text-primary" />
+                          Get Ready - {countdown}
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-primary" />
+                          Step {currentStepIndex + 1} Requirements
+                        </>
+                      )}
                     </h3>
-                    <Badge variant="outline" className="text-xs">
-                      {[gestureVerified, componentVerified, speechVerified].filter(Boolean).length}/
-                      {[currentTaskSteps[currentStepIndex]?.gestureId, 
-                        currentTaskSteps[currentStepIndex]?.componentId, 
-                        currentTaskSteps[currentStepIndex]?.speechPhrase].filter(Boolean).length || 1} Verified
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      {!isVerifying && countdown === null && (
+                        <Button size="sm" variant="default" onClick={startStepCountdown}>
+                          <PlayCircle className="w-4 h-4 mr-1" />
+                          Start
+                        </Button>
+                      )}
+                      <Badge variant="outline" className="text-xs">
+                        {[gestureVerified, componentVerified, speechVerified].filter(Boolean).length}/
+                        {[currentTaskSteps[currentStepIndex]?.gestureId, 
+                          currentTaskSteps[currentStepIndex]?.componentId, 
+                          currentTaskSteps[currentStepIndex]?.speechPhrase].filter(Boolean).length || 1} Verified
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Step Description */}
+                  <div className="mb-4 p-3 bg-muted/30 rounded-lg">
+                    <p className="text-sm font-medium">{currentTaskSteps[currentStepIndex]?.description}</p>
                   </div>
                   
                   <div className="grid grid-cols-3 gap-4">
@@ -985,21 +1276,20 @@ const Monitor = () => {
                         ? 'border-muted bg-muted/20 opacity-50' 
                         : gestureVerified 
                           ? 'border-green-500 bg-green-500/10' 
-                          : 'border-orange-500 bg-orange-500/10'
+                          : isVerifying
+                            ? 'border-orange-500 bg-orange-500/10 animate-pulse'
+                            : 'border-orange-500/50 bg-orange-500/5'
                     }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Hand className={`w-5 h-5 ${gestureVerified ? 'text-green-500' : 'text-orange-500'}`} />
                         <span className="font-medium text-sm">Gesture</span>
                         {gestureVerified && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
                       </div>
-                      <p className="text-sm">
+                      <p className="text-sm font-medium">
                         {currentTaskSteps[currentStepIndex]?.gestureId 
                           ? trainedGestures.find(g => g.id === currentTaskSteps[currentStepIndex]?.gestureId)?.name || currentTaskSteps[currentStepIndex]?.gestureId
                           : 'None required'}
                       </p>
-                      {currentTaskSteps[currentStepIndex]?.gestureId && !gestureVerified && (
-                        <p className="text-xs text-muted-foreground mt-1">Show gesture to camera</p>
-                      )}
                     </div>
 
                     {/* Component Requirement */}
@@ -1008,88 +1298,66 @@ const Monitor = () => {
                         ? 'border-muted bg-muted/20 opacity-50' 
                         : componentVerified 
                           ? 'border-green-500 bg-green-500/10' 
-                          : 'border-orange-500 bg-orange-500/10'
+                          : isVerifying
+                            ? 'border-orange-500 bg-orange-500/10 animate-pulse'
+                            : 'border-orange-500/50 bg-orange-500/5'
                     }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Box className={`w-5 h-5 ${componentVerified ? 'text-green-500' : 'text-orange-500'}`} />
                         <span className="font-medium text-sm">Component</span>
                         {componentVerified && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
                       </div>
-                      <p className="text-sm">
+                      <p className="text-sm font-medium">
                         {currentTaskSteps[currentStepIndex]?.componentId 
                           ? trainedComponents[parseInt(currentTaskSteps[currentStepIndex]?.componentId || '0') - 1] || 'Component'
                           : 'None required'}
                       </p>
-                      {currentTaskSteps[currentStepIndex]?.componentId && !componentVerified && (
-                        <p className="text-xs text-muted-foreground mt-1">Show component to camera</p>
-                      )}
                     </div>
 
-                    {/* Speech Requirement */}
+                    {/* Speech Requirement with Karaoke Preview */}
                     <div className={`p-3 rounded-lg border-2 transition-all ${
                       !currentTaskSteps[currentStepIndex]?.speechPhrase 
                         ? 'border-muted bg-muted/20 opacity-50' 
                         : speechVerified 
                           ? 'border-green-500 bg-green-500/10' 
-                          : 'border-blue-500 bg-blue-500/10'
+                          : isVerifying
+                            ? 'border-blue-500 bg-blue-500/10 animate-pulse'
+                            : 'border-blue-500/50 bg-blue-500/5'
                     }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Volume2 className={`w-5 h-5 ${speechVerified ? 'text-green-500' : 'text-blue-500'}`} />
                         <span className="font-medium text-sm">Speech</span>
                         {speechVerified && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
+                        {isVerifying && isListening && !speechVerified && (
+                          <Mic className="w-4 h-4 text-red-500 ml-auto animate-pulse" />
+                        )}
                       </div>
                       <p className="text-sm font-medium">
                         {currentTaskSteps[currentStepIndex]?.speechPhrase 
                           ? `"${currentTaskSteps[currentStepIndex]?.speechPhrase}"`
                           : 'None required'}
                       </p>
-                      {currentTaskSteps[currentStepIndex]?.speechPhrase && !speechVerified && (
-                        <div className="mt-2">
-                          <Button 
-                            size="sm" 
-                            variant={isListening ? "destructive" : "outline"}
-                            onClick={toggleListening}
-                            className="w-full text-xs"
-                          >
-                            {isListening ? (
-                              <>
-                                <MicOff className="w-3 h-3 mr-1" />
-                                Stop
-                              </>
-                            ) : (
-                              <>
-                                <Mic className="w-3 h-3 mr-1" />
-                                Start Speaking
-                              </>
-                            )}
-                          </Button>
-                          {spokenText && (
-                            <p className="text-xs text-muted-foreground mt-1 italic">
-                              Heard: "{spokenText}"
-                            </p>
-                          )}
-                        </div>
+                      {isVerifying && spokenText && (
+                        <p className="text-xs text-muted-foreground mt-1 italic truncate">
+                          Heard: "{spokenText}"
+                        </p>
                       )}
                     </div>
                   </div>
 
-                  {/* Overall Progress */}
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                      <span>Verification Progress</span>
-                      <span>{Math.round(([gestureVerified || !currentTaskSteps[currentStepIndex]?.gestureId, 
-                               componentVerified || !currentTaskSteps[currentStepIndex]?.componentId, 
-                               speechVerified || !currentTaskSteps[currentStepIndex]?.speechPhrase]
-                               .filter(Boolean).length / 3) * 100)}%</span>
+                  {/* Verification Timer Progress */}
+                  {isVerifying && verificationStartTime && (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                        <span>Time Remaining</span>
+                        <span>{Math.max(0, Math.ceil((VERIFICATION_DURATION - (Date.now() - verificationStartTime)) / 1000))}s</span>
+                      </div>
+                      <Progress 
+                        value={Math.max(0, 100 - ((Date.now() - verificationStartTime) / VERIFICATION_DURATION) * 100)} 
+                        className="h-2"
+                      />
                     </div>
-                    <Progress 
-                      value={([gestureVerified || !currentTaskSteps[currentStepIndex]?.gestureId, 
-                               componentVerified || !currentTaskSteps[currentStepIndex]?.componentId, 
-                               speechVerified || !currentTaskSteps[currentStepIndex]?.speechPhrase]
-                               .filter(Boolean).length / 3) * 100} 
-                      className="h-2"
-                    />
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             )}
