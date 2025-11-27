@@ -652,7 +652,7 @@ const Monitor = () => {
     setGestureRecordingComplete(false);
     gestureFramesRef.current = []; // Clear previous frames
 
-    // Start speech recognition immediately
+    // Start speech recognition immediately (but we won't block on it for now)
     if (recognitionRef.current) {
       setSpokenText("");
       try {
@@ -708,14 +708,42 @@ const Monitor = () => {
 
         if (result) {
           setCurrentGesture(result.gesture);
-          // Check if it matches
-          checkStepVerification(result.gesture, result.confidence, currentComponents);
+          console.log(`[Verify] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
 
-          if (result.confidence > LOCK_CONFIDENCE) {
-            toast.success(`Detected: ${result.gesture}`);
+          // Explicitly check against required gesture
+          const currentStep = getStepsForTask(selectedTask)[currentStepIndex];
+
+          if (currentStep && currentStep.gestureId) {
+            const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
+
+            if (requiredGesture) {
+              const detectedNorm = normalizeGestureName(result.gesture);
+              const requiredNorm = normalizeGestureName(requiredGesture.name);
+
+              console.log(`[Verify] Comparing: Detected '${detectedNorm}' vs Required '${requiredNorm}'`);
+
+              if (detectedNorm === requiredNorm && result.confidence > LOCK_CONFIDENCE) {
+                toast.success(`✅ MATCHED: ${result.gesture}`);
+                // FORCE COMPLETE
+                handleCompleteStep();
+                return;
+              } else {
+                toast.error(`❌ Mismatch: Expected ${requiredGesture.name}, got ${result.gesture}`);
+              }
+            } else {
+              console.warn("Required gesture not found in trained gestures list");
+              // If no specific gesture required, maybe just pass?
+              // For now, assume if gestureId exists, we must match it.
+            }
           } else {
-            toast.warning(`Gesture unclear: ${result.gesture}`);
+            // No gesture required for this step?
+            console.log("No gesture required for this step");
+            // If no gesture required, we shouldn't be here really, but let's pass
+            handleCompleteStep();
+            return;
           }
+        } else {
+          toast.warning("No gesture detected");
         }
       } catch (err) {
         console.error("Verification failed:", err);
@@ -725,8 +753,6 @@ const Monitor = () => {
       toast.error("No gesture detected (too few frames)");
       setGestureRecordingComplete(true);
     }
-
-    toast.info("🎤 Now speak the phrase!");
   };
 
   // Start countdown before step verification
