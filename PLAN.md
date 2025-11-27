@@ -843,8 +843,273 @@ node server.js   # Backend (port 3000)
 ### Key Architecture
 - **Gesture**: Browser records → Server classifies (1 API call)
 - **Speech**: Browser handles everything (0 API calls)
-- **Both run in parallel** for efficient verification
+- **Component**: YOLO detection in background (throttled API calls)
+- **All three run in parallel** for efficient verification
 
+---
 
+## Session: November 27, 2025 (Night) - Step Verification Loop & Component Integration
+
+### Problems Faced & Solutions
+
+#### Problem 1: Second Step Verification Freezes
+**Symptom**: After completing step 1, step 2 verification would freeze/hang
+**Root Cause**: Stale closure in `handleCompleteStep` - the `currentStepIndex` was captured at callback creation time, not execution time
+
+**Solution**: Added `currentStepIndexRef` to track index in real-time
+```typescript
+const currentStepIndexRef = useRef(currentStepIndex);
+
+// In handleCompleteStep - read from ref instead of stale closure
+const currentIdx = currentStepIndexRef.current;
+if (currentIdx < totalSteps - 1) {
+  const nextStepIndex = currentIdx + 1;
+  setCurrentStepIndex(nextStepIndex);
+  currentStepIndexRef.current = nextStepIndex; // Update ref immediately
+}
+```
+**Commit**: `5f344a1` - "fix: use ref in handleCompleteStep for all step transitions"
+
+---
+
+#### Problem 2: Speech Detection Leaking Between Sessions
+**Symptom**: Rare case where speech showed "1/2 verified" before task even started
+**Root Cause**: 
+1. `spokenTextRef.current` wasn't cleared during resets
+2. Web Speech API auto-restart feature kept listening
+3. Leftover text could match new step requirements
+
+**Solution**: Clear ref and stop recognition during all resets
+```typescript
+const resetStepVerification = useCallback(() => {
+  // ... other resets
+  spokenTextRef.current = ""; // Clear speech ref
+  if (recognitionRef.current && isListeningRef.current) {
+    isListeningRef.current = false;
+    recognitionRef.current.stop();
+    setIsListening(false);
+  }
+}, []);
+```
+**Commit**: `d2a7e2e` - "fix: prevent speech detection leaking between sessions"
+
+---
+
+#### Problem 3: Component Detection Not Part of Step Verification
+**Symptom**: Steps with componentId requirement weren't checking component detection
+**Root Cause**: `startStepVerification()` only checked gesture + speech, ignored component
+
+**Solution**: Integrated component into verification flow
+```typescript
+// In startStepVerification:
+const requiredComponentId = currentStep?.componentId;
+const requiredComponent = requiredComponentId
+  ? trainedComponents[parseInt(requiredComponentId) - 1]
+  : null;
+
+// Enable YOLO detection during verification
+setIsVerifying(true);
+
+// After gesture/speech check:
+if (requiredComponent) {
+  componentMatched = !!lockedComponent && 
+    lockedComponent.toLowerCase() === requiredComponent.toLowerCase();
+}
+
+// Pass only when ALL match
+if (gestureMatched && speechMatched && componentMatched) {
+  handleCompleteStep();
+}
+```
+**Commit**: `107525b` - "feat: integrate component detection into step verification"
+
+---
+
+### New Feature: Test Component Button
+
+Added a "Test Component" button for standalone YOLO testing:
+
+```typescript
+const startTestComponent = async () => {
+  // Capture current video frame
+  const base64 = tempCanvas.toDataURL('image/jpeg', 0.8);
+  
+  // Send to YOLO endpoint
+  const response = await fetch('http://localhost:3000/api/detect', {
+    method: 'POST',
+    body: JSON.stringify({ image: base64 })
+  });
+  
+  // Display results
+  if (result.detections.length > 0) {
+    const detected = result.detections
+      .map(d => `${d.class} (${(d.confidence * 100).toFixed(0)}%)`)
+      .join(', ');
+    setTestComponentResult(detected);
+  }
+};
+```
+**Commit**: `7ef4c4f` - "feat: add Test Component button for YOLO detection testing"
+
+---
+
+## Current Architecture Summary
+
+### Detection Stack
+| Component | Technology | Location | Server Load |
+|-----------|------------|----------|-------------|
+| Hand Tracking | MediaPipe Hands | Browser | 0 |
+| Gesture Classification | DTW + k-NN | Server (Python) | 1 call/verification |
+| Speech Recognition | Web Speech API | Browser | 0 |
+| Object Detection | YOLOv8n | Server (Python) | Throttled (500ms) |
+
+### Step Verification Flow
+```
+User clicks "Start Step"
+        ↓
+Countdown: 3 → 2 → 1
+        ↓
+┌─────────────────────────────────────────┐
+│           PARALLEL EXECUTION             │
+├─────────────────┬───────────┬───────────┤
+│ Speech API      │ Gesture   │ YOLO      │
+│ (browser)       │ Recording │ Detection │
+│ listens for     │ 3 seconds │ background│
+│ speech          │ of frames │ loop      │
+└─────────────────┴───────────┴───────────┘
+        ↓
+DTW Classification (server)
+        ↓
+Check All Requirements:
+  - Gesture: detected == required?
+  - Speech: fuzzy match >= 70%?
+  - Component: lockedComponent == required?
+        ↓
+ALL PASS → Complete Step → Next Step
+ANY FAIL → Show Error → Retry
+```
+
+### State Management
+| State | Purpose | Ref Mirror |
+|-------|---------|------------|
+| `currentStepIndex` | Current step number | `currentStepIndexRef` |
+| `spokenText` | Accumulated speech | `spokenTextRef` |
+| `isListening` | Speech API active | `isListeningRef` |
+| `lockedGesture` | First high-confidence gesture | - |
+| `lockedComponent` | First high-confidence component | - |
+
+### Key Constants
+```typescript
+const LOCK_CONFIDENCE = 0.5;      // 50% to lock gesture/component
+const RECORD_DURATION = 3000;     // 3 seconds gesture recording
+const FAST_DETECTION_INTERVAL = 500;  // 500ms between YOLO calls
+const SLOW_DETECTION_INTERVAL = 2000; // 2s when component locked
+```
+
+---
+
+## Technology Decisions
+
+### Why YOLOv8n for Component Detection?
+- **Speed**: ~6ms/frame inference
+- **Size**: 6MB model file
+- **Accuracy**: Good for 20-80cm working distance
+- **Real-time**: Can handle 30fps with throttling
+- **Custom Training**: Easy to train on specific components
+
+### Why DTW for Gesture Recognition?
+- **No Training Time**: Instant "training" by storing templates
+- **Speed Invariant**: Same gesture at different speeds matches
+- **Low Data**: Works with 1-3 samples per class
+- **Interpretable**: Can debug by examining distances
+
+### Why Web Speech API for Speech?
+- **Zero Server Load**: Runs entirely in browser
+- **Free**: No API costs
+- **Real-time**: Streaming transcription
+- **Good Accuracy**: Works well for short phrases
+
+---
+
+## File Structure (Key Files)
+
+```
+src/pages/
+├── Monitor.tsx          # Main monitoring page (2200+ lines)
+├── Training.tsx         # AI training page
+├── BuildWI.tsx          # Work instruction builder
+└── ManageTeam.tsx       # Team management
+
+server.js                # Express backend (port 3000)
+├── /api/detect          # YOLO object detection
+├── /api/gestures/classify  # DTW gesture classification
+└── /api/gestures/train  # Save gesture templates
+
+gesture_workflow/
+├── scripts/dtw_gesture.py  # DTW + k-NN implementation
+└── models/gesture_model.pkl  # Trained gesture model
+
+yolo_workflow/
+├── scripts/detect.py    # YOLO inference
+├── scripts/train_model.py  # YOLO training
+└── runs/custom_model/weights/best.pt  # Trained model
+```
+
+---
+
+## Git Commits Summary (November 27, 2025)
+
+| Commit | Description |
+|--------|-------------|
+| `24e9339` | docs: add task persistence session to PLAN.md |
+| `da8a0ca` | feat: add persistent task completion with daily task instances |
+| `64f4c9c` | fix: resolve stale closure issue causing second step verification to freeze |
+| `5f344a1` | fix: use ref in handleCompleteStep for all step transitions |
+| `d2a7e2e` | fix: prevent speech detection leaking between sessions |
+| `107525b` | feat: integrate component detection into step verification |
+| `7ef4c4f` | feat: add Test Component button for YOLO detection testing |
+
+---
+
+## Next Steps / TODO
+
+1. **Training UI Improvements**
+   - Add more training data for YOLO components
+   - Add data augmentation for gesture templates
+
+2. **Production Readiness**
+   - Move from localStorage to real database
+   - Add user authentication
+   - Implement reporting/export
+
+3. **Optional Upgrades**
+   - Consider YOLOv11 for better accuracy
+   - Explore YOLO-World for zero-shot detection
+   - Add GPU acceleration if available
+
+---
+
+## Quick Commands
+
+```bash
+# Start development
+npm run dev & node server.js
+
+# Test gesture detection
+curl -X POST http://localhost:3000/api/gestures/classify \
+  -H "Content-Type: application/json" \
+  -d '{"frames": [...]}'
+
+# Test YOLO detection
+curl -X POST http://localhost:3000/api/detect \
+  -H "Content-Type: application/json" \
+  -d '{"image": "data:image/jpeg;base64,..."}'
+
+# Check gesture model
+python gesture_workflow/scripts/dtw_gesture.py --info
+
+# Train YOLO model
+python yolo_workflow/scripts/train_model.py --epochs 50
+```
 
 
