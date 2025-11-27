@@ -628,30 +628,8 @@ const Monitor = () => {
     return [];
   }, [workInstructions]);
 
-  // Auto-verify gesture when currentGesture matches required gesture
-  useEffect(() => {
-    if (!isTaskActive || !selectedTask || lockedGesture) return;
-    if (!currentGesture) return;
-
-    const currentStep = getStepsForTask(selectedTask)[currentStepIndex];
-    if (!currentStep?.gestureId) return;
-
-    const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
-    if (!requiredGesture) return;
-
-    const detectedNorm = normalizeGestureName(currentGesture);
-    const requiredNorm = normalizeGestureName(requiredGesture.name);
-
-    console.log(`[Auto-Verify] Checking: "${currentGesture}" (${detectedNorm}) vs Required: "${requiredGesture.name}" (${requiredNorm})`);
-
-    if (detectedNorm === requiredNorm) {
-      // MATCH! Lock the gesture immediately
-      console.log(`[Auto-Verify] ✅ GESTURE MATCHED: ${currentGesture}`);
-      setLockedGesture(currentGesture);
-      setGestureVerified(true);
-      toast.success(`✅ Gesture "${currentGesture}" - PASSED!`);
-    }
-  }, [currentGesture, isTaskActive, selectedTask, currentStepIndex, lockedGesture, trainedGestures, getStepsForTask]);
+  // NOTE: Auto-verify useEffect removed - matching is now handled directly in performGestureVerification()
+  
   // Reset step verification states - FULL reset (for moving to next step)
   const resetStepVerification = useCallback(() => {
     setSpeechVerified(false);
@@ -684,64 +662,56 @@ const Monitor = () => {
     // Keep spokenText for reference
   }, []);
 
-  // Perform one-shot gesture verification (same logic as Test Gesture)
-  const performGestureVerification = async () => {
-    if (!selectedTask || !isTaskActive) return;
+  // Step Verification - EXACTLY like startTestGesture
+  // Countdown → Wait for hand → Record → Classify → Show result → Complete step if match
+  const startStepVerification = async () => {
+    if (!selectedTask || !isTaskActive || !detector) return;
 
     const currentStep = getStepsForTask(selectedTask)[currentStepIndex];
-    const needsGesture = currentStep?.gestureId && !lockedGesture;
-    const needsSpeech = currentStep?.speechPhrase && !speechVerified;
+    const requiredGestureId = currentStep?.gestureId;
     
-    console.log('[Verify] Starting...', { needsGesture, needsSpeech, lockedGesture, speechVerified });
-    
-    setIsVerifying(true);
-    setVerificationStartTime(Date.now());
+    // Get required gesture info
+    const requiredGesture = requiredGestureId 
+      ? trainedGestures.find(g => g.id === requiredGestureId) 
+      : null;
 
-    // Start speech recognition if needed
-    if (needsSpeech && recognitionRef.current) {
-      setSpokenText("");
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch (e) {
-        console.error("Failed to start speech recognition:", e);
-      }
-    }
+    console.log('[StepVerify] Starting verification...', { 
+      requiredGesture: requiredGesture?.name || 'none',
+      stepIndex: currentStepIndex 
+    });
 
-    // If gesture not needed, we're done with gesture part
-    if (!needsGesture) {
-      console.log('[Verify] Gesture already done or not required');
-      setGestureRecordingComplete(true);
-      return;
-    }
+    // Use same state as Test Gesture for UI consistency
+    setIsTestingGesture(true);
+    setTestGestureResult(null);
+    testGestureFramesRef.current = [];
 
-    // === GESTURE RECORDING (same as Test Gesture) ===
-    const RECORD_DURATION = 3000; // 3 seconds
+    const RECORD_DURATION = 3000; // 3 seconds recording
     const FRAME_INTERVAL = 33;    // ~30fps
-    
-    setIsRecordingGesture(true);
-    setGestureRecordingComplete(false);
-    gestureFramesRef.current = [];
 
     try {
-      // Wait for hand to appear (max 5 seconds)
-      let waitTime = 0;
-      while (lastHandsRef.current.length === 0 && waitTime < 5000) {
+      // Phase 1: Countdown from 3
+      for (let c = 3; c > 0; c--) {
+        setTestGestureCountdown(c);
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      setTestGestureCountdown(0);
+
+      // Phase 2: Wait for hand to appear (max 10 seconds)
+      setTestMessage("Show your hand...");
+      let waitTimeout = 0;
+      while (lastHandsRef.current.length === 0) {
         await new Promise(r => setTimeout(r, 100));
-        waitTime += 100;
+        waitTimeout += 100;
+        if (waitTimeout > 10000) throw new Error("Timeout waiting for hand");
+        if (!videoRef.current) throw new Error("Camera stopped");
       }
 
-      if (lastHandsRef.current.length === 0) {
-        toast.warning("No hand detected. Show your hand!");
-        setIsRecordingGesture(false);
-        setGestureRecordingComplete(true);
-        return;
-      }
+      // Phase 3: Record for fixed duration
+      setTestMessage("Recording your gesture...");
+      testStartTimeRef.current = Date.now();
 
-      // Record for fixed duration
-      const startTime = Date.now();
-      while (Date.now() - startTime < RECORD_DURATION) {
-        const elapsed = Date.now() - startTime;
+      while (Date.now() - testStartTimeRef.current < RECORD_DURATION) {
+        const elapsed = Date.now() - testStartTimeRef.current;
         const hands = lastHandsRef.current;
 
         let leftHand = null;
@@ -755,62 +725,90 @@ const Monitor = () => {
           });
         }
 
-        gestureFramesRef.current.push({
+        testGestureFramesRef.current.push({
           timestamp: elapsed,
           left_hand: leftHand,
           right_hand: rightHand
         });
 
+        const progress = Math.round((elapsed / RECORD_DURATION) * 100);
+        setTestMessage(`Recording... ${progress}%`);
+
         await new Promise(r => setTimeout(r, FRAME_INTERVAL));
+        if (!videoRef.current) throw new Error("Camera stopped");
       }
 
-      setIsRecordingGesture(false);
-      const frameCount = gestureFramesRef.current.length;
-      console.log(`[Verify] Recorded ${frameCount} frames`);
+      const recordedFrameCount = testGestureFramesRef.current.length;
+      console.log(`[StepVerify] Recorded ${recordedFrameCount} frames`);
 
-      if (frameCount < 10) {
-        toast.error("Too few frames. Keep hand visible!");
-        setGestureRecordingComplete(true);
+      if (recordedFrameCount < 10) {
+        setTestGestureResult(`Too few frames. Keep hand visible.`);
+        toast.error("Not enough hand data. Keep your hand visible.");
+        setTimeout(() => setTestGestureResult(null), 3000);
         return;
       }
 
-      // Classify with DTW
-      console.log('[Verify] Classifying...');
-      const result = await classifyGestureDTW(gestureFramesRef.current);
-      setGestureRecordingComplete(true);
+      // Phase 4: Classify with DTW
+      setTestMessage("Analyzing...");
+      const result = await classifyGestureDTW(testGestureFramesRef.current);
+      setTestMessage(null);
 
       if (result) {
-        console.log(`[Verify] Result: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
-        setCurrentGesture(result.gesture); // This triggers auto-verify useEffect!
-        toast.info(`Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+        const detectedGesture = result.gesture;
+        const confidence = result.confidence;
+        
+        setTestGestureResult(`${detectedGesture} (${(confidence * 100).toFixed(0)}%)`);
+        setCurrentGesture(detectedGesture);
+
+        // Check if it matches required gesture (if any)
+        if (requiredGesture) {
+          const detectedNorm = normalizeGestureName(detectedGesture);
+          const requiredNorm = normalizeGestureName(requiredGesture.name);
+
+          if (detectedNorm === requiredNorm) {
+            // ✅ MATCH - Pass step!
+            toast.success(`✅ "${detectedGesture}" - STEP PASSED!`, { duration: 2000 });
+            setTimeout(() => {
+              setTestGestureResult(null);
+              handleCompleteStep();
+            }, 1500);
+          } else {
+            // ❌ No match
+            toast.error(`❌ Need "${requiredGesture.name}", got "${detectedGesture}"`, { duration: 3000 });
+            setTimeout(() => setTestGestureResult(null), 3000);
+          }
+        } else {
+          // No gesture required - just show result and pass
+          toast.success(`Detected: ${detectedGesture} - STEP PASSED!`, { duration: 2000 });
+          setTimeout(() => {
+            setTestGestureResult(null);
+            handleCompleteStep();
+          }, 1500);
+        }
       } else {
-        toast.warning("Could not classify gesture");
+        setTestGestureResult("No gesture detected");
+        toast.error("No gesture detected. Try again.");
+        setTimeout(() => setTestGestureResult(null), 3000);
       }
 
-    } catch (err) {
-      console.error('[Verify] Error:', err);
-      toast.error("Gesture verification failed");
-      setIsRecordingGesture(false);
-      setGestureRecordingComplete(true);
+    } catch (err: any) {
+      console.error('[StepVerify] Error:', err);
+      setTestGestureResult(`Error: ${err.message}`);
+      toast.error(err.message);
+      setTimeout(() => setTestGestureResult(null), 3000);
+    } finally {
+      setIsTestingGesture(false);
+      setTestGestureCountdown(null);
+      setTestMessage(null);
+      testGestureFramesRef.current = [];
     }
   };
 
-  // Start countdown before step verification
+  // Start step verification directly (no separate countdown - it's built into startStepVerification)
   const startStepCountdown = useCallback(() => {
-    setCountdown(3);
-    setIsVerifying(false);
-
-    // Prepare karaoke words from current step's speech phrase
-    const currentStep = selectedTask ? getStepsForTask(selectedTask)[currentStepIndex] : null;
-    if (currentStep?.speechPhrase) {
-      const words = currentStep.speechPhrase.split(/\s+/).filter(w => w.length > 0);
-      setKaraokeWords(words);
-    } else {
-      setKaraokeWords([]);
-    }
-    setCurrentWordIndex(0);
-    setSpokenWords([]);
-  }, [selectedTask, getStepsForTask, currentStepIndex]);
+    // Just call startStepVerification directly - it has its own countdown
+    startStepVerification();
+  }, [selectedTask, isTaskActive, detector, currentStepIndex, trainedGestures, getStepsForTask]);
 
   const handleCompleteStep = useCallback(() => {
     if (!selectedTask) return;
@@ -1282,101 +1280,8 @@ const Monitor = () => {
     startStepCountdown();
   };
 
-
-
-
-
-  // Countdown effect
-  useEffect(() => {
-    if (countdown === null) return;
-
-    if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    } else {
-      // Countdown finished - start one-shot verification
-      setCountdown(null);
-      performGestureVerification();
-    }
-  }, [countdown]);
-
-  // Verification timeout - check if all requirements met
-  useEffect(() => {
-    if (!isVerifying || !verificationStartTime) return;
-
-    const checkInterval = setInterval(() => {
-      const elapsed = Date.now() - verificationStartTime;
-
-      // Check if all verifications passed (gesture/component are locked once detected)
-      const currentStep = selectedTask ? getStepsForTask(selectedTask)[currentStepIndex] : null;
-
-      // Gesture verified = locked or not required
-      const gestureOk = !currentStep?.gestureId || lockedGesture !== null;
-      // Component verified = locked or not required  
-      const componentOk = !currentStep?.componentId || lockedComponent !== null;
-      // Speech verified = matched or not required
-      const speechOk = !currentStep?.speechPhrase || speechVerified;
-
-      const allVerified = gestureOk && componentOk && speechOk;
-
-      if (allVerified) {
-        // Success! Move to next step
-        setIsVerifying(false);
-        setIsRecordingGesture(false);
-        setGestureRecordingComplete(false);
-        isListeningRef.current = false;
-        setIsListening(false);
-        if (recognitionRef.current) {
-          recognitionRef.current.stop();
-        }
-
-        // Show final summary
-        toast.success("✅ STEP PASSED!", { duration: 2000 });
-        console.log('[Verify] PASSED - Gesture:', lockedGesture, 'Component:', lockedComponent, 'Speech:', speechVerified);
-
-        handleCompleteStep();
-      } else if (elapsed >= VERIFICATION_DURATION) {
-        // Time's up - show final summary
-        setIsVerifying(false);
-        setIsRecordingGesture(false);
-        setGestureRecordingComplete(false);
-        isListeningRef.current = false;
-        setIsListening(false);
-        if (recognitionRef.current) {
-          recognitionRef.current.stop();
-        }
-
-        // Build summary of what passed/failed
-        const results = [];
-        if (currentStep?.gestureId) {
-          results.push(lockedGesture ? `✅ Gesture: ${lockedGesture}` : `❌ Gesture: NOT DONE`);
-        }
-        if (currentStep?.componentId) {
-          results.push(lockedComponent ? `✅ Component: ${lockedComponent}` : `❌ Component: NOT DONE`);
-        }
-        if (currentStep?.speechPhrase) {
-          results.push(speechVerified ? `✅ Speech: OK` : `❌ Speech: NOT DONE`);
-        }
-
-        // Count what's done
-        const doneCount = [lockedGesture, lockedComponent, speechVerified].filter(Boolean).length;
-        const totalCount = [currentStep?.gestureId, currentStep?.componentId, currentStep?.speechPhrase].filter(Boolean).length;
-
-        console.log('[Verify] Timeout - Progress:', doneCount, '/', totalCount, results.join(', '));
-        
-        if (doneCount > 0 && doneCount < totalCount) {
-          // Partial progress - keep what's verified
-          toast.warning(`⏱️ Time up! Progress: ${doneCount}/${totalCount}\n${results.join('\n')}`, { duration: 4000 });
-          softResetVerification(); // Keep verified items!
-        } else if (doneCount === 0) {
-          toast.error(`❌ STEP FAILED!\n${results.join('\n')}`, { duration: 4000 });
-          softResetVerification(); // Still keep trying
-        }
-      }
-    }, 100);
-
-    return () => clearInterval(checkInterval);
-  }, [isVerifying, verificationStartTime, speechVerified, selectedTask, currentStepIndex, lockedGesture, lockedComponent, softResetVerification, handleCompleteStep]);
+  // NOTE: Countdown is now handled inside startStepVerification() itself
+  // No separate countdown useEffect needed
 
 
 
@@ -1685,112 +1590,8 @@ const Monitor = () => {
                     </div>
                   )}
 
-                  {/* Verification Timer + Karaoke Overlay */}
-                  {isVerifying && isTaskActive && selectedTask && (
-                    <div className="absolute inset-0 pointer-events-none z-10">
-                      {/* Timer bar at top */}
-                      <div className="absolute top-0 left-0 right-0 h-2 bg-black/50">
-                        <div
-                          className="h-full bg-gradient-to-r from-green-500 to-yellow-500 transition-all duration-100"
-                          style={{
-                            width: `${Math.max(0, 100 - ((Date.now() - (verificationStartTime || 0)) / VERIFICATION_DURATION) * 100)}%`
-                          }}
-                        />
-                      </div>
-
-                      {/* Gesture Recording Phase Indicator */}
-                      {isRecordingGesture && !gestureRecordingComplete && (
-                        <div className="absolute top-4 left-4 right-4 flex justify-center">
-                          <div className="bg-red-600/90 rounded-xl px-6 py-3 border-2 border-red-400 animate-pulse">
-                            <div className="flex items-center gap-3 text-white">
-                              <div className="w-3 h-3 bg-white rounded-full animate-ping" />
-                              <Hand className="w-6 h-6" />
-                              <span className="text-lg font-bold">RECORDING GESTURE...</span>
-                              <span className="text-sm opacity-80">
-                                {Math.max(0, Math.ceil((GESTURE_RECORD_DURATION - (Date.now() - gestureStartTimeRef.current)) / 1000))}s
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Gesture Complete - Now Speech */}
-                      {gestureRecordingComplete && (
-                        <div className="absolute top-4 left-4 right-4 flex justify-center">
-                          <div className={`rounded-xl px-6 py-3 border-2 ${lockedGesture ? 'bg-green-600/90 border-green-400' : 'bg-yellow-600/90 border-yellow-400'
-                            }`}>
-                            <div className="flex items-center gap-3 text-white">
-                              {lockedGesture ? (
-                                <>
-                                  <CheckCircle2 className="w-6 h-6" />
-                                  <span className="text-lg font-bold">✓ Gesture: {lockedGesture}</span>
-                                </>
-                              ) : (
-                                <>
-                                  <AlertCircle className="w-6 h-6" />
-                                  <span className="text-lg font-bold">⚠ Gesture: {currentGesture || 'unclear'}</span>
-                                </>
-                              )}
-                              <span className="text-sm opacity-80 ml-4">🎤 Now speak!</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Karaoke words display */}
-                      {karaokeWords.length > 0 && (
-                        <div className="absolute bottom-20 left-0 right-0 flex justify-center">
-                          <div className="bg-black/80 rounded-2xl px-6 py-4 mx-4">
-                            <div className="flex flex-wrap justify-center gap-2 text-2xl font-bold">
-                              {karaokeWords.map((word, idx) => (
-                                <span
-                                  key={idx}
-                                  className={`transition-all duration-300 ${idx < currentWordIndex
-                                    ? 'text-green-400 scale-95'
-                                    : idx === currentWordIndex
-                                      ? 'text-yellow-400 scale-110 animate-pulse'
-                                      : 'text-white/50'
-                                    }`}
-                                >
-                                  {word}
-                                </span>
-                              ))}
-                            </div>
-                            {/* Spoken feedback */}
-                            <div className="text-center mt-3 text-sm text-white/60">
-                              <Mic className="w-4 h-4 inline mr-1 animate-pulse text-red-500" />
-                              {spokenText || interimText || "Listening..."}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Verification status badges - show LOCKED status */}
-                      <div className="absolute bottom-4 left-4 right-4 flex justify-center gap-3">
-                        {currentTaskSteps[currentStepIndex]?.gestureId && (
-                          <Badge className={`text-sm px-3 py-1 ${lockedGesture ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}>
-                            <Hand className="w-4 h-4 mr-1" />
-                            {lockedGesture ? `✓ ${lockedGesture}` : 'Show Gesture'}
-                          </Badge>
-                        )}
-                        {currentTaskSteps[currentStepIndex]?.componentId && (
-                          <Badge className={`text-sm px-3 py-1 ${lockedComponent ? 'bg-green-500' : 'bg-orange-500 animate-pulse'}`}>
-                            <Box className="w-4 h-4 mr-1" />
-                            {lockedComponent ? `✓ ${lockedComponent}` : 'Show Component'}
-                          </Badge>
-                        )}
-                        {currentTaskSteps[currentStepIndex]?.speechPhrase && (
-                          <Badge className={`text-sm px-3 py-1 ${speechVerified ? 'bg-green-500' : 'bg-blue-500 animate-pulse'}`}>
-                            <Volume2 className="w-4 h-4 mr-1" />
-                            {speechVerified ? '✓ Speech' : 'Say Phrase'}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Task Overlay (when not verifying) */}
-                  {isTaskActive && selectedTask && !isVerifying && countdown === null && (
+                  {/* Task Overlay - shows current step info */}
+                  {isTaskActive && selectedTask && countdown === null && (
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                       <div className="text-white">
                         <p className="text-sm opacity-70">Step {currentStepIndex + 1} of {currentTaskSteps.length}</p>
@@ -1933,20 +1734,6 @@ const Monitor = () => {
                       )}
                     </div>
                   </div>
-
-                  {/* Verification Timer Progress */}
-                  {isVerifying && verificationStartTime && (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                        <span>Time Remaining</span>
-                        <span>{Math.max(0, Math.ceil((VERIFICATION_DURATION - (Date.now() - verificationStartTime)) / 1000))}s</span>
-                      </div>
-                      <Progress
-                        value={Math.max(0, 100 - ((Date.now() - verificationStartTime) / VERIFICATION_DURATION) * 100)}
-                        className="h-2"
-                      />
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             )}
