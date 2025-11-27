@@ -188,6 +188,10 @@ const Monitor = () => {
   const testStartTimeRef = useRef<number>(0);
   const lastHandsRef = useRef<handPoseDetection.Hand[]>([]); // Store last detected hands
 
+  // Test Component State
+  const [isTestingComponent, setIsTestingComponent] = useState(false);
+  const [testComponentResult, setTestComponentResult] = useState<string | null>(null);
+
   // Confidence threshold for locking gesture/component
   const LOCK_CONFIDENCE = 0.5; // 50% confidence to lock in (same as DTW threshold)
 
@@ -668,6 +672,69 @@ const Monitor = () => {
       .toLowerCase()
       .replace(/[_\-\s]+/g, '') // Remove underscores, hyphens, spaces
       .trim();
+  };
+
+  // Test Component function - single snapshot detection
+  const startTestComponent = async () => {
+    if (isTestingComponent || !videoRef.current) return;
+
+    setIsTestingComponent(true);
+    setTestComponentResult(null);
+
+    try {
+      const video = videoRef.current;
+      
+      // Create canvas to capture frame
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = video.videoWidth;
+      tempCanvas.height = video.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      
+      if (!tempCtx) throw new Error("Could not create canvas context");
+
+      // Capture current frame
+      tempCtx.drawImage(video, 0, 0);
+      const base64 = tempCanvas.toDataURL('image/jpeg', 0.8);
+
+      toast.info("Detecting components...");
+
+      // Send to YOLO endpoint
+      const response = await fetch('http://localhost:3000/api/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64 })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Detection failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('[TestComponent] Detection result:', result);
+
+      if (result.detections && result.detections.length > 0) {
+        // Show all detected components
+        const detected = result.detections
+          .map((d: any) => `${d.class} (${(d.confidence * 100).toFixed(0)}%)`)
+          .join(', ');
+        setTestComponentResult(detected);
+        toast.success(`Found: ${detected}`);
+      } else {
+        setTestComponentResult("No components detected");
+        toast.warning("No components detected in frame");
+      }
+
+      // Auto-dismiss after 4 seconds
+      setTimeout(() => setTestComponentResult(null), 4000);
+
+    } catch (err: any) {
+      console.error('[TestComponent] Error:', err);
+      setTestComponentResult(`Error: ${err.message}`);
+      toast.error(err.message);
+      setTimeout(() => setTestComponentResult(null), 3000);
+    } finally {
+      setIsTestingComponent(false);
+    }
   };
 
   // Helper to get steps
@@ -1735,6 +1802,16 @@ const Monitor = () => {
                     </Button>
                     <Button
                       size="sm"
+                      variant={isTestingComponent ? "destructive" : "secondary"}
+                      onClick={startTestComponent}
+                      disabled={isTestingComponent}
+                      className={isTestingComponent ? "animate-pulse" : ""}
+                    >
+                      <Box className="w-4 h-4" />
+                      <span className="ml-1 text-xs">{isTestingComponent ? "Detecting..." : "Test Component"}</span>
+                    </Button>
+                    <Button
+                      size="sm"
                       variant={isListening ? "destructive" : "secondary"}
                       onClick={toggleListening}
                       className={isListening ? "animate-pulse" : ""}
@@ -1839,6 +1916,31 @@ const Monitor = () => {
                             variant="ghost"
                             className="text-white hover:bg-white/10"
                             onClick={() => setTestGestureResult(null)}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Test Component Result */}
+                  {testComponentResult && !isTestingComponent && !testGestureResult && (
+                    <div className="absolute bottom-4 left-4 right-4 z-20">
+                      <div className={`rounded-xl px-5 py-4 border ${testComponentResult.includes('(') && !testComponentResult.includes('Error') && !testComponentResult.includes('No components')
+                        ? 'bg-blue-900/90 border-blue-500'
+                        : 'bg-orange-900/90 border-orange-500'
+                        }`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Box className="w-5 h-5 text-white" />
+                            <span className="text-white font-medium">{testComponentResult}</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-white hover:bg-white/10"
+                            onClick={() => setTestComponentResult(null)}
                           >
                             Dismiss
                           </Button>
