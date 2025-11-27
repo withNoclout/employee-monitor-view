@@ -965,14 +965,17 @@ const Monitor = () => {
     const wi = workInstructions.find(w => w.id === selectedTask.wiId);
     const totalSteps = wi?.steps?.length || selectedTask.totalSteps;
 
-    if (currentStepIndex < totalSteps - 1) {
-      const nextStepIndex = currentStepIndex + 1;
+    // Use ref to get CURRENT step index (avoids stale closure)
+    const currentIdx = currentStepIndexRef.current;
+    
+    if (currentIdx < totalSteps - 1) {
+      const nextStepIndex = currentIdx + 1;
       setCurrentStepIndex(nextStepIndex);
       currentStepIndexRef.current = nextStepIndex; // Update ref immediately for setTimeout closure
       setStepVerified(false);
       // Reset and start countdown for next step
       resetStepVerification();
-      toast.success(`Step ${currentStepIndex + 1} verified! ✓`);
+      toast.success(`Step ${currentIdx + 1} verified! ✓`);
 
       // Auto-start next step countdown after a brief pause
       setTimeout(() => {
