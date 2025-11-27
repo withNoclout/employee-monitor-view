@@ -566,11 +566,17 @@ const Monitor = () => {
       }
 
       // Phase 4: Classify with DTW
-      setTestMessage("Analyzing gesture with DTW...");
+      setTestMessage("Analyzing...");
       console.log(`[Test] Calling classifyGestureDTW with ${recordedFrameCount} frames...`);
+      const apiStartTime = Date.now();
 
       const result = await classifyGestureDTW(testGestureFramesRef.current);
+      const apiTime = Date.now() - apiStartTime;
+      console.log(`[Test] API response time: ${apiTime}ms`);
       console.log(`[Test] DTW result:`, result);
+      
+      // Clear message immediately before showing result
+      setTestMessage(null);
 
       if (result) {
         setTestGestureResult(`${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
@@ -622,7 +628,31 @@ const Monitor = () => {
     return [];
   }, [workInstructions]);
 
-  // Reset step verification states
+  // Auto-verify gesture when currentGesture matches required gesture
+  useEffect(() => {
+    if (!isTaskActive || !selectedTask || lockedGesture) return;
+    if (!currentGesture) return;
+
+    const currentStep = getStepsForTask(selectedTask)[currentStepIndex];
+    if (!currentStep?.gestureId) return;
+
+    const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
+    if (!requiredGesture) return;
+
+    const detectedNorm = normalizeGestureName(currentGesture);
+    const requiredNorm = normalizeGestureName(requiredGesture.name);
+
+    console.log(`[Auto-Verify] Checking: "${currentGesture}" (${detectedNorm}) vs Required: "${requiredGesture.name}" (${requiredNorm})`);
+
+    if (detectedNorm === requiredNorm) {
+      // MATCH! Lock the gesture immediately
+      console.log(`[Auto-Verify] ✅ GESTURE MATCHED: ${currentGesture}`);
+      setLockedGesture(currentGesture);
+      setGestureVerified(true);
+      toast.success(`✅ Gesture "${currentGesture}" - PASSED!`);
+    }
+  }, [currentGesture, isTaskActive, selectedTask, currentStepIndex, lockedGesture, trainedGestures, getStepsForTask]);
+  // Reset step verification states - FULL reset (for moving to next step)
   const resetStepVerification = useCallback(() => {
     setSpeechVerified(false);
     setGestureVerified(false);
@@ -642,18 +672,33 @@ const Monitor = () => {
     setGestureRecordingComplete(false);
   }, []);
 
-  // Perform one-shot gesture verification (mimics Test Gesture)
+  // Soft reset - keeps what's already verified (for retry)
+  const softResetVerification = useCallback(() => {
+    // DON'T reset: speechVerified, lockedGesture, lockedComponent, gestureVerified, componentVerified
+    setIsVerifying(false);
+    setVerificationStartTime(null);
+    gestureFramesRef.current = []; // Clear DTW frames
+    isClassifyingGestureRef.current = false;
+    setIsRecordingGesture(false);
+    setGestureRecordingComplete(false);
+    // Keep spokenText for reference
+  }, []);
+
+  // Perform one-shot gesture verification (same logic as Test Gesture)
   const performGestureVerification = async () => {
     if (!selectedTask || !isTaskActive) return;
 
-    console.log('[Verify] Starting one-shot gesture verification...');
+    const currentStep = getStepsForTask(selectedTask)[currentStepIndex];
+    const needsGesture = currentStep?.gestureId && !lockedGesture;
+    const needsSpeech = currentStep?.speechPhrase && !speechVerified;
+    
+    console.log('[Verify] Starting...', { needsGesture, needsSpeech, lockedGesture, speechVerified });
+    
     setIsVerifying(true);
-    setIsRecordingGesture(true);
-    setGestureRecordingComplete(false);
-    gestureFramesRef.current = []; // Clear previous frames
+    setVerificationStartTime(Date.now());
 
-    // Start speech recognition immediately (but we won't block on it for now)
-    if (recognitionRef.current) {
+    // Start speech recognition if needed
+    if (needsSpeech && recognitionRef.current) {
       setSpokenText("");
       try {
         recognitionRef.current.start();
@@ -663,94 +708,89 @@ const Monitor = () => {
       }
     }
 
-    toast.info("🖐️ RECORDING GESTURE... Hold still!");
+    // If gesture not needed, we're done with gesture part
+    if (!needsGesture) {
+      console.log('[Verify] Gesture already done or not required');
+      setGestureRecordingComplete(true);
+      return;
+    }
 
-    const RECORD_DURATION = 3000;
-    const startTime = Date.now();
-    setVerificationStartTime(startTime); // Start the overall verification timer
+    // === GESTURE RECORDING (same as Test Gesture) ===
+    const RECORD_DURATION = 3000; // 3 seconds
+    const FRAME_INTERVAL = 33;    // ~30fps
+    
+    setIsRecordingGesture(true);
+    setGestureRecordingComplete(false);
+    gestureFramesRef.current = [];
 
-    // Recording Loop
-    while (Date.now() - startTime < RECORD_DURATION) {
-      // Check if we should stop
-      if (!isTaskActive) break;
+    try {
+      // Wait for hand to appear (max 5 seconds)
+      let waitTime = 0;
+      while (lastHandsRef.current.length === 0 && waitTime < 5000) {
+        await new Promise(r => setTimeout(r, 100));
+        waitTime += 100;
+      }
 
-      const elapsed = Date.now() - startTime;
-      const hands = lastHandsRef.current;
+      if (lastHandsRef.current.length === 0) {
+        toast.warning("No hand detected. Show your hand!");
+        setIsRecordingGesture(false);
+        setGestureRecordingComplete(true);
+        return;
+      }
 
-      if (hands.length > 0) {
+      // Record for fixed duration
+      const startTime = Date.now();
+      while (Date.now() - startTime < RECORD_DURATION) {
+        const elapsed = Date.now() - startTime;
+        const hands = lastHandsRef.current;
+
         let leftHand = null;
         let rightHand = null;
 
-        hands.forEach(hand => {
-          const handData = extractHandLandmarks(hand);
-          if (hand.handedness === 'Left') leftHand = handData;
-          else rightHand = handData;
-        });
+        if (hands.length > 0) {
+          hands.forEach(hand => {
+            const handData = extractHandLandmarks(hand);
+            if (hand.handedness === 'Left') leftHand = handData;
+            else rightHand = handData;
+          });
+        }
 
         gestureFramesRef.current.push({
           timestamp: elapsed,
           left_hand: leftHand,
           right_hand: rightHand
         });
+
+        await new Promise(r => setTimeout(r, FRAME_INTERVAL));
       }
 
-      await new Promise(r => setTimeout(r, 33)); // ~30fps
-    }
+      setIsRecordingGesture(false);
+      const frameCount = gestureFramesRef.current.length;
+      console.log(`[Verify] Recorded ${frameCount} frames`);
 
-    setIsRecordingGesture(false);
-    console.log(`[Verify] Recording complete! ${gestureFramesRef.current.length} frames`);
-
-    // Classify
-    if (gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW) {
-      try {
-        const result = await classifyGestureDTW(gestureFramesRef.current);
+      if (frameCount < 10) {
+        toast.error("Too few frames. Keep hand visible!");
         setGestureRecordingComplete(true);
-
-        if (result) {
-          setCurrentGesture(result.gesture);
-          console.log(`[Verify] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
-
-          // Explicitly check against required gesture
-          const currentStep = getStepsForTask(selectedTask)[currentStepIndex];
-
-          if (currentStep && currentStep.gestureId) {
-            const requiredGesture = trainedGestures.find(g => g.id === currentStep.gestureId);
-
-            if (requiredGesture) {
-              const detectedNorm = normalizeGestureName(result.gesture);
-              const requiredNorm = normalizeGestureName(requiredGesture.name);
-
-              console.log(`[Verify] Comparing: Detected '${detectedNorm}' vs Required '${requiredNorm}'`);
-
-              if (detectedNorm === requiredNorm && result.confidence > LOCK_CONFIDENCE) {
-                toast.success(`✅ MATCHED: ${result.gesture}`);
-                // FORCE COMPLETE
-                handleCompleteStep();
-                return;
-              } else {
-                toast.error(`❌ Mismatch: Expected ${requiredGesture.name}, got ${result.gesture}`);
-              }
-            } else {
-              console.warn("Required gesture not found in trained gestures list");
-              // If no specific gesture required, maybe just pass?
-              // For now, assume if gestureId exists, we must match it.
-            }
-          } else {
-            // No gesture required for this step?
-            console.log("No gesture required for this step");
-            // If no gesture required, we shouldn't be here really, but let's pass
-            handleCompleteStep();
-            return;
-          }
-        } else {
-          toast.warning("No gesture detected");
-        }
-      } catch (err) {
-        console.error("Verification failed:", err);
-        toast.error("Verification failed");
+        return;
       }
-    } else {
-      toast.error("No gesture detected (too few frames)");
+
+      // Classify with DTW
+      console.log('[Verify] Classifying...');
+      const result = await classifyGestureDTW(gestureFramesRef.current);
+      setGestureRecordingComplete(true);
+
+      if (result) {
+        console.log(`[Verify] Result: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+        setCurrentGesture(result.gesture); // This triggers auto-verify useEffect!
+        toast.info(`Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
+      } else {
+        toast.warning("Could not classify gesture");
+      }
+
+    } catch (err) {
+      console.error('[Verify] Error:', err);
+      toast.error("Gesture verification failed");
+      setIsRecordingGesture(false);
       setGestureRecordingComplete(true);
     }
   };
@@ -1309,24 +1349,34 @@ const Monitor = () => {
         // Build summary of what passed/failed
         const results = [];
         if (currentStep?.gestureId) {
-          results.push(lockedGesture ? `✅ Gesture: ${lockedGesture}` : `❌ Gesture: FAILED`);
+          results.push(lockedGesture ? `✅ Gesture: ${lockedGesture}` : `❌ Gesture: NOT DONE`);
         }
         if (currentStep?.componentId) {
-          results.push(lockedComponent ? `✅ Component: ${lockedComponent}` : `❌ Component: FAILED`);
+          results.push(lockedComponent ? `✅ Component: ${lockedComponent}` : `❌ Component: NOT DONE`);
         }
         if (currentStep?.speechPhrase) {
-          results.push(speechVerified ? `✅ Speech: OK` : `❌ Speech: FAILED`);
+          results.push(speechVerified ? `✅ Speech: OK` : `❌ Speech: NOT DONE`);
         }
 
-        console.log('[Verify] FAILED - Summary:', results.join(', '));
-        toast.error(`❌ STEP FAILED!\n${results.join('\n')}`, { duration: 4000 });
+        // Count what's done
+        const doneCount = [lockedGesture, lockedComponent, speechVerified].filter(Boolean).length;
+        const totalCount = [currentStep?.gestureId, currentStep?.componentId, currentStep?.speechPhrase].filter(Boolean).length;
 
-        resetStepVerification();
+        console.log('[Verify] Timeout - Progress:', doneCount, '/', totalCount, results.join(', '));
+        
+        if (doneCount > 0 && doneCount < totalCount) {
+          // Partial progress - keep what's verified
+          toast.warning(`⏱️ Time up! Progress: ${doneCount}/${totalCount}\n${results.join('\n')}`, { duration: 4000 });
+          softResetVerification(); // Keep verified items!
+        } else if (doneCount === 0) {
+          toast.error(`❌ STEP FAILED!\n${results.join('\n')}`, { duration: 4000 });
+          softResetVerification(); // Still keep trying
+        }
       }
     }, 100);
 
     return () => clearInterval(checkInterval);
-  }, [isVerifying, verificationStartTime, speechVerified, selectedTask, currentStepIndex, lockedGesture, lockedComponent]);
+  }, [isVerifying, verificationStartTime, speechVerified, selectedTask, currentStepIndex, lockedGesture, lockedComponent, softResetVerification, handleCompleteStep]);
 
 
 
