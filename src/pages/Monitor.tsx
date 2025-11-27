@@ -120,7 +120,7 @@ const Monitor = () => {
   const [lockedComponent, setLockedComponent] = useState<string | null>(null); // First high-confidence component detected
   const recognitionRef = useRef<any>(null);
   const isListeningRef = useRef(false); // Track listening state for callbacks;
-  
+
   // DTW Gesture Sequence Collection
   const gestureFramesRef = useRef<any[]>([]); // Collect frames for DTW (same format as Training.tsx)
   const lastGestureApiCall = useRef<number>(0);
@@ -128,7 +128,7 @@ const Monitor = () => {
   const MIN_FRAMES_FOR_DTW = 10; // Minimum frames before calling API
   const gestureStartTimeRef = useRef<number>(0);
   const isClassifyingGestureRef = useRef<boolean>(false); // Prevent multiple classify calls
-  
+
   // Test Gesture State
   const [isTestingGesture, setIsTestingGesture] = useState(false);
   const [testGestureCountdown, setTestGestureCountdown] = useState<number | null>(null);
@@ -137,7 +137,7 @@ const Monitor = () => {
   const testGestureFramesRef = useRef<any[]>([]); // Same format as Training.tsx
   const testStartTimeRef = useRef<number>(0);
   const lastHandsRef = useRef<handPoseDetection.Hand[]>([]); // Store last detected hands
-  
+
   // Confidence threshold for locking gesture/component
   const LOCK_CONFIDENCE = 0.5; // 50% confidence to lock in (same as DTW threshold)
 
@@ -145,7 +145,7 @@ const Monitor = () => {
   const frameCountRef = useRef<number>(0);
   const HAND_FRAME_SKIP = 1; // Process every frame = full fps hand detection
   // This gives maximum hand tracking responsiveness
-  
+
   // Adaptive component detection frequency
   const FAST_DETECTION_INTERVAL = 500;  // ms - when searching for objects
   const SLOW_DETECTION_INTERVAL = 2000; // ms - when object already found (>70%)
@@ -219,7 +219,7 @@ const Monitor = () => {
     if (savedGestures) {
       setTrainedGestures(JSON.parse(savedGestures));
     }
-    
+
     const savedComponents = localStorage.getItem('training_classes');
     if (savedComponents) {
       const components = JSON.parse(savedComponents);
@@ -248,7 +248,7 @@ const Monitor = () => {
     recognition.onresult = (event: any) => {
       let finalTranscript = '';
       let interimTranscript = '';
-      
+
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
@@ -257,12 +257,12 @@ const Monitor = () => {
           interimTranscript += transcript;
         }
       }
-      
+
       console.log('Speech result:', { final: finalTranscript, interim: interimTranscript });
-      
+
       // Update interim text immediately (shows real-time what's being heard)
       setInterimText(interimTranscript);
-      
+
       // Append final transcript to spoken text
       if (finalTranscript.trim()) {
         setSpokenText(prev => (prev + ' ' + finalTranscript).trim());
@@ -334,31 +334,31 @@ const Monitor = () => {
   const fuzzyMatch = (spoken: string, target: string): number => {
     const spokenWords = spoken.toLowerCase().split(/\s+/).filter(w => w.length > 2);
     const targetWords = target.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-    
+
     if (targetWords.length === 0) return 1; // No target = always match
-    
+
     let matchCount = 0;
     for (const targetWord of targetWords) {
       for (const spokenWord of spokenWords) {
         // Check if words are similar (allowing for minor differences)
         if (spokenWord.includes(targetWord) || targetWord.includes(spokenWord) ||
-            levenshteinDistance(spokenWord, targetWord) <= 2) {
+          levenshteinDistance(spokenWord, targetWord) <= 2) {
           matchCount++;
           break;
         }
       }
     }
-    
+
     return matchCount / targetWords.length;
   };
 
   // Levenshtein distance for fuzzy matching
   const levenshteinDistance = (a: string, b: string): number => {
     const matrix = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-    
+
     for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
     for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
-    
+
     for (let j = 1; j <= b.length; j++) {
       for (let i = 1; i <= a.length; i++) {
         const cost = a[i - 1] === b[j - 1] ? 0 : 1;
@@ -369,21 +369,21 @@ const Monitor = () => {
         );
       }
     }
-    
+
     return matrix[b.length][a.length];
   };
 
   // Check speech verification
   useEffect(() => {
     if (!isTaskActive || !selectedTask) return;
-    
+
     const currentTaskSteps = getStepsForTask(selectedTask);
     const currentStep = currentTaskSteps[currentStepIndex];
     if (!currentStep?.speechPhrase) {
       setSpeechVerified(true); // No speech required
       return;
     }
-    
+
     const matchScore = fuzzyMatch(spokenText, currentStep.speechPhrase);
     if (matchScore >= 0.7) { // 70% match threshold
       setSpeechVerified(true);
@@ -435,44 +435,44 @@ const Monitor = () => {
     });
 
     if (count === 0 || minDist > 30) return null;
-    
+
     const avgDist = totalDist / count;
     const confidence = Math.max(0, Math.min(1, 1 - (minDist / avgDist)));
-    
+
     return { gesture: bestGesture, confidence };
   }, [trainedGestures]);
 
   // Extract hand landmarks in normalized format (same as Training.tsx)
   const extractHandLandmarks = useCallback((hand: handPoseDetection.Hand | null): { landmarks: number[][] } | null => {
     if (!hand || !hand.keypoints || hand.keypoints.length < 21) return null;
-    
+
     const wrist = hand.keypoints[0];
     const landmarks = hand.keypoints.map(kp => [
       (kp.x - wrist.x) / 100,  // Normalize relative to wrist
       (kp.y - wrist.y) / 100,
       (kp as any).z || 0
     ]);
-    
+
     return { landmarks };
   }, []);
 
   // Classify gesture using DTW Server API (same format as Training.tsx)
   const classifyGestureDTW = useCallback(async (frames: any[]): Promise<{ gesture: string; confidence: number } | null> => {
     if (frames.length < MIN_FRAMES_FOR_DTW) return null;
-    
+
     // Debug: Log what we're sending
     console.log('[DTW] Sending frames count:', frames.length);
     if (frames.length > 0) {
       console.log('[DTW] First frame:', JSON.stringify(frames[0]));
     }
-    
+
     try {
       const response = await fetch('http://localhost:3000/api/gestures/classify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ frames })  // Already in correct format: {timestamp, left_hand, right_hand}
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         console.log('[DTW] Server response:', result);
@@ -492,14 +492,14 @@ const Monitor = () => {
   // Test Gesture function - exactly like Training.tsx
   const startTestGesture = async () => {
     if (isTestingGesture || !detector) return;
-    
+
     setIsTestingGesture(true);
     setTestGestureResult(null);
     testGestureFramesRef.current = [];
-    
+
     const TEST_DURATION = 3000; // 3 seconds recording
     const FRAME_INTERVAL = 33;  // ~30fps
-    
+
     try {
       // Phase 1: Countdown from 3
       for (let c = 3; c > 0; c--) {
@@ -507,7 +507,7 @@ const Monitor = () => {
         await new Promise(r => setTimeout(r, 1000));
       }
       setTestGestureCountdown(0);
-      
+
       // Phase 2: Wait for hand to appear (max 10 seconds)
       setTestMessage("Show your hand...");
       let waitTimeout = 0;
@@ -517,19 +517,19 @@ const Monitor = () => {
         if (waitTimeout > 10000) throw new Error("Timeout waiting for hand");
         if (!videoRef.current) throw new Error("Camera stopped");
       }
-      
+
       // Phase 3: Record for fixed duration
       setTestMessage("Recording your gesture...");
       testStartTimeRef.current = Date.now();
-      
+
       while (Date.now() - testStartTimeRef.current < TEST_DURATION) {
         const elapsed = Date.now() - testStartTimeRef.current;
         const hands = lastHandsRef.current;
-        
+
         // Extract landmarks in same format as Training.tsx
         let leftHand = null;
         let rightHand = null;
-        
+
         if (hands.length > 0) {
           hands.forEach(hand => {
             const handData = extractHandLandmarks(hand);
@@ -537,26 +537,26 @@ const Monitor = () => {
             else rightHand = handData;
           });
         }
-        
+
         // Record frame (same format as Training.tsx)
         testGestureFramesRef.current.push({
           timestamp: elapsed,
           left_hand: leftHand,
           right_hand: rightHand
         });
-        
+
         // Update progress
         const progress = Math.round((elapsed / TEST_DURATION) * 100);
         setTestMessage(`Recording... ${progress}%`);
-        
+
         await new Promise(r => setTimeout(r, FRAME_INTERVAL));
         if (!videoRef.current) throw new Error("Camera stopped");
       }
-      
+
       const recordedFrameCount = testGestureFramesRef.current.length;
       console.log(`[Test] Recorded ${recordedFrameCount} frames`);
       console.log(`[Test] Sample frame:`, testGestureFramesRef.current[0]);
-      
+
       if (recordedFrameCount < 10) {
         setTestGestureResult(`Too few frames (${recordedFrameCount}). Keep hand visible.`);
         toast.error("Not enough hand data. Keep your hand visible.");
@@ -564,14 +564,14 @@ const Monitor = () => {
         setTimeout(() => setTestGestureResult(null), 3000);
         return;
       }
-      
+
       // Phase 4: Classify with DTW
       setTestMessage("Analyzing gesture with DTW...");
       console.log(`[Test] Calling classifyGestureDTW with ${recordedFrameCount} frames...`);
-      
+
       const result = await classifyGestureDTW(testGestureFramesRef.current);
       console.log(`[Test] DTW result:`, result);
-      
+
       if (result) {
         setTestGestureResult(`${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
         setCurrentGesture(result.gesture);
@@ -580,10 +580,10 @@ const Monitor = () => {
         setTestGestureResult("No gesture detected");
         toast.error("No gesture detected. Try again.");
       }
-      
+
       // Auto-dismiss result after 3 seconds
       setTimeout(() => setTestGestureResult(null), 3000);
-      
+
     } catch (err: any) {
       console.error('[Test] Error:', err);
       setTestGestureResult(`Error: ${err.message}`);
@@ -606,10 +606,97 @@ const Monitor = () => {
       .trim();
   };
 
+  // Helper to get steps
+  const getStepsForTask = useCallback((task: Task): WIStep[] => {
+    if (task.wiId) {
+      const wi = workInstructions.find(w => w.id === task.wiId);
+      return wi?.steps || [];
+    }
+    if (task.type === 'calibration') {
+      return [
+        { id: '1', gestureId: null, componentId: null, description: 'Verify camera position is correct and centered', speechPhrase: 'camera ready' },
+        { id: '2', gestureId: null, componentId: null, description: 'Check lighting conditions - ensure no shadows', speechPhrase: 'lighting check complete' },
+        { id: '3', gestureId: null, componentId: null, description: 'Perform T-Pose for 3 seconds to calibrate', speechPhrase: 'calibration done' },
+      ];
+    }
+    return [];
+  }, [workInstructions]);
+
+  // Reset step verification states
+  const resetStepVerification = useCallback(() => {
+    setSpeechVerified(false);
+    setGestureVerified(false);
+    setComponentVerified(false);
+    setLockedGesture(null);
+    setLockedComponent(null);
+    setSpokenText("");
+    setInterimText("");
+    setSpokenWords([]);
+    setCurrentWordIndex(0);
+    setIsVerifying(false);
+    setVerificationStartTime(null);
+    setCurrentGesture(null);
+    gestureFramesRef.current = []; // Clear DTW frames
+    isClassifyingGestureRef.current = false; // Reset classification lock
+    setIsRecordingGesture(false);
+    setGestureRecordingComplete(false);
+  }, []);
+
+  // Start countdown before step verification
+  const startStepCountdown = useCallback(() => {
+    setCountdown(3);
+    setIsVerifying(false);
+
+    // Prepare karaoke words from current step's speech phrase
+    const currentStep = selectedTask ? getStepsForTask(selectedTask)[currentStepIndex] : null;
+    if (currentStep?.speechPhrase) {
+      const words = currentStep.speechPhrase.split(/\s+/).filter(w => w.length > 0);
+      setKaraokeWords(words);
+    } else {
+      setKaraokeWords([]);
+    }
+    setCurrentWordIndex(0);
+    setSpokenWords([]);
+  }, [selectedTask, getStepsForTask, currentStepIndex]);
+
+  const handleCompleteStep = useCallback(() => {
+    if (!selectedTask) return;
+
+    const wi = workInstructions.find(w => w.id === selectedTask.wiId);
+    const totalSteps = wi?.steps?.length || selectedTask.totalSteps;
+
+    if (currentStepIndex < totalSteps - 1) {
+      setCurrentStepIndex(prev => prev + 1);
+      setStepVerified(false);
+      // Reset and start countdown for next step
+      resetStepVerification();
+      toast.success(`Step ${currentStepIndex + 1} verified! ✓`);
+
+      // Auto-start next step countdown after a brief pause
+      setTimeout(() => {
+        startStepCountdown();
+      }, 1500);
+    } else {
+      setIsTaskActive(false);
+      setIsVerifying(false);
+      if (recognitionRef.current && isListening) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      }
+      setTasks(prev => prev.map(t =>
+        t.id === selectedTask.id
+          ? { ...t, status: 'completed' as const, completedSteps: totalSteps }
+          : t
+      ));
+      setSelectedTask(prev => prev ? { ...prev, status: 'completed', completedSteps: totalSteps } : null);
+      toast.success("🎉 Task Completed Successfully!");
+    }
+  }, [selectedTask, workInstructions, currentStepIndex, resetStepVerification, startStepCountdown, isListening]);
+
   // Check if current step requirements are met and lock gesture/component on first high-confidence match
   const checkStepVerification = useCallback((gesture: string | null, gestureConfidence: number, components: Detection[]) => {
     if (!selectedTask || !isTaskActive || !isVerifying) return false;
-    
+
     const currentTaskSteps = getStepsForTask(selectedTask);
     const currentStep = currentTaskSteps[currentStepIndex];
     if (!currentStep) return false;
@@ -628,9 +715,9 @@ const Monitor = () => {
         if (requiredGesture) {
           const detectedNorm = normalizeGestureName(gesture);
           const requiredNorm = normalizeGestureName(requiredGesture.name);
-          
+
           console.log(`[Gesture Match] Detected: "${gesture}" (${detectedNorm}) vs Required: "${requiredGesture.name}" (${requiredNorm})`);
-          
+
           if (detectedNorm === requiredNorm) {
             // CORRECT gesture detected - LOCK IT and mark as DONE
             setLockedGesture(gesture);
@@ -638,8 +725,9 @@ const Monitor = () => {
             gestureMatch = true;
             toast.success(`✓ Gesture "${gesture}" - Done!`);
           }
+        } else {
+          console.warn(`[Gesture Match] Required gesture ID ${currentStep.gestureId} not found in trained gestures`);
         }
-        // If wrong gesture, don't lock - keep looking
       }
     }
 
@@ -652,7 +740,7 @@ const Monitor = () => {
         const requiredComponent = trainedComponents.find((_, i) => `${i + 1}` === currentStep.componentId);
         if (requiredComponent) {
           // Only lock if it's the REQUIRED component
-          const found = components.find(c => 
+          const found = components.find(c =>
             c.class.toLowerCase() === requiredComponent.toLowerCase() && c.confidence >= LOCK_CONFIDENCE
           );
           if (found) {
@@ -672,8 +760,14 @@ const Monitor = () => {
     // Check speech separately (handled in useEffect)
     const speechMatch = !currentStep.speechPhrase || speechVerified;
 
+    // FORCE COMPLETE if all conditions met
+    if (gestureMatch && componentMatch && speechMatch) {
+      console.log('[checkStepVerification] All conditions met, completing step...');
+      handleCompleteStep();
+    }
+
     return gestureMatch && componentMatch && speechMatch;
-  }, [selectedTask, isTaskActive, isVerifying, currentStepIndex, trainedGestures, trainedComponents, speechVerified, lockedGesture, lockedComponent]);
+  }, [selectedTask, isTaskActive, isVerifying, currentStepIndex, trainedGestures, trainedComponents, speechVerified, lockedGesture, lockedComponent, getStepsForTask, handleCompleteStep]);
 
   // Main Detection Loop
   useEffect(() => {
@@ -700,7 +794,7 @@ const Monitor = () => {
 
         // Hand Detection - ALWAYS detect hands (like Training.tsx)
         let hands: handPoseDetection.Hand[] = [];
-        
+
         if (shouldProcessFrame) {
           hands = await detector.estimateHands(video);
           setHandsDetected(hands.length);
@@ -721,58 +815,58 @@ const Monitor = () => {
             ctx.fill();
           });
         }
-        
+
         // Collect frames for DTW verification - during gesture recording phase only
         if (!lockedGesture && isVerifying && isRecordingGesture && !gestureRecordingComplete && hands.length > 0) {
           const elapsed = Date.now() - gestureStartTimeRef.current;
-          
+
           // Extract landmarks in same format as Training.tsx
           let leftHand = null;
           let rightHand = null;
-          
+
           hands.forEach(hand => {
             const handData = extractHandLandmarks(hand);
             if (hand.handedness === 'Left') leftHand = handData;
             else rightHand = handData;
           });
-          
+
           // Record frame (same format as Training.tsx)
           gestureFramesRef.current.push({
             timestamp: elapsed,
             left_hand: leftHand,
             right_hand: rightHand
           });
-          
+
           // After GESTURE_RECORD_DURATION, classify ONCE (use ref flag to prevent multiple calls)
           if (elapsed >= GESTURE_RECORD_DURATION && gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW && !isClassifyingGestureRef.current) {
             isClassifyingGestureRef.current = true; // LOCK - prevent multiple API calls
             console.log(`[Verify] Recording complete! ${gestureFramesRef.current.length} frames in ${elapsed}ms`);
             setIsRecordingGesture(false);
-            
+
             // Classify with all collected frames (copy array to avoid mutations)
             const framesToClassify = [...gestureFramesRef.current];
             gestureFramesRef.current = []; // Clear immediately
-            
+
             classifyGestureDTW(framesToClassify).then(result => {
               console.log('[Verify] DTW result:', result);
               setGestureRecordingComplete(true);
-              
+
               if (result && result.confidence > LOCK_CONFIDENCE) {
                 setCurrentGesture(result.gesture);
                 console.log(`[Verify] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
-                
+
                 // Check step verification with DTW result
                 if (isVerifying && !lockedGesture) {
                   checkStepVerification(result.gesture, result.confidence, currentComponents);
                 }
-                
+
                 toast.success(`🖐️ Gesture: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
               } else {
                 console.log(`[Verify] Low confidence or no result`);
                 setCurrentGesture(result?.gesture || 'unknown');
                 toast.warning(`⚠️ Gesture unclear: ${result?.gesture || 'none'} (${((result?.confidence || 0) * 100).toFixed(0)}%)`);
               }
-              
+
               toast.info("🎤 Now speak the phrase!");
             }).catch(err => {
               console.error('[Verify] DTW classification failed:', err);
@@ -789,7 +883,7 @@ const Monitor = () => {
 
         // Component Detection (throttled + ROI optimization) - SKIP if component already locked
         const shouldDetectComponent = !lockedComponent && isVerifying;
-        
+
         if (!lockedComponent && !isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
           lastDetectionTime.current = now;
           setIsDetecting(true);
@@ -805,12 +899,12 @@ const Monitor = () => {
           tempCanvas.width = roiWidth;
           tempCanvas.height = roiHeight;
           const tempCtx = tempCanvas.getContext('2d');
-          
+
           if (tempCtx) {
             // Draw only the ROI region
             tempCtx.drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
             const base64 = tempCanvas.toDataURL('image/jpeg', 0.7); // Slightly lower quality for speed
-            
+
             // Draw ROI indicator on main canvas (subtle)
             ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
             ctx.lineWidth = 1;
@@ -841,13 +935,13 @@ const Monitor = () => {
                     }
                   }));
                   setCurrentComponents(adjustedDetections);
-                  
+
                   // Adaptive detection frequency
                   // Check if any detection has >70% confidence
                   const hasHighConfidence = adjustedDetections.some(
                     (det: Detection) => det.confidence >= 0.70
                   );
-                  
+
                   if (hasHighConfidence) {
                     // Object found - slow down detection
                     detectionIntervalRef.current = SLOW_DETECTION_INTERVAL;
@@ -879,28 +973,28 @@ const Monitor = () => {
         // Merge overlapping boxes of same class
         const filteredDetections = currentComponents.filter(det => det.confidence >= 0.70);
         const mergedDetections: typeof filteredDetections = [];
-        
+
         filteredDetections.forEach(det => {
           // Check if this detection overlaps with an existing merged detection
           const overlapThreshold = 0.3; // 30% overlap = same object
           let merged = false;
-          
+
           for (let i = 0; i < mergedDetections.length; i++) {
             const existing = mergedDetections[i];
             if (existing.class !== det.class) continue;
-            
+
             // Calculate IoU (Intersection over Union)
             const x1 = Math.max(det.bbox.x1, existing.bbox.x1);
             const y1 = Math.max(det.bbox.y1, existing.bbox.y1);
             const x2 = Math.min(det.bbox.x2, existing.bbox.x2);
             const y2 = Math.min(det.bbox.y2, existing.bbox.y2);
-            
+
             const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
             const area1 = (det.bbox.x2 - det.bbox.x1) * (det.bbox.y2 - det.bbox.y1);
             const area2 = (existing.bbox.x2 - existing.bbox.x1) * (existing.bbox.y2 - existing.bbox.y1);
             const union = area1 + area2 - intersection;
             const iou = intersection / union;
-            
+
             if (iou > overlapThreshold) {
               // Merge: keep the one with higher confidence
               if (det.confidence > existing.confidence) {
@@ -910,12 +1004,12 @@ const Monitor = () => {
               break;
             }
           }
-          
+
           if (!merged) {
             mergedDetections.push(det);
           }
         });
-        
+
         // Draw merged detections
         mergedDetections.forEach(det => {
           const x1 = det.bbox.x1 * canvas.width;
@@ -951,11 +1045,11 @@ const Monitor = () => {
 
     const savedWIs = localStorage.getItem('saved_work_instructions');
     const teamsData = localStorage.getItem('teams_data');
-    
+
     if (savedWIs) {
       const wis: WorkInstruction[] = JSON.parse(savedWIs);
       setWorkInstructions(wis);
-      
+
       let assignedWIId: string | null = null;
       if (teamsData) {
         const teams = JSON.parse(teamsData);
@@ -966,7 +1060,7 @@ const Monitor = () => {
       }
 
       const taskList: Task[] = [];
-      
+
       if (assignedWIId) {
         const assignedWI = wis.find(w => w.id === assignedWIId);
         if (assignedWI) {
@@ -1038,7 +1132,7 @@ const Monitor = () => {
         try {
           // Use 640x480 - optimal for MobileNet/MediaPipe and YOLO inference
           // Reduces processing load significantly vs 1920x1080
-          stream = await navigator.mediaDevices.getUserMedia({ 
+          stream = await navigator.mediaDevices.getUserMedia({
             video: {
               width: { ideal: 640 },
               height: { ideal: 480 },
@@ -1094,47 +1188,14 @@ const Monitor = () => {
     startStepCountdown();
   };
 
-  // Start countdown before step verification
-  const startStepCountdown = () => {
-    setCountdown(3);
-    setIsVerifying(false);
-    
-    // Prepare karaoke words from current step's speech phrase
-    const currentStep = selectedTask ? getStepsForTask(selectedTask)[currentStepIndex] : null;
-    if (currentStep?.speechPhrase) {
-      const words = currentStep.speechPhrase.split(/\s+/).filter(w => w.length > 0);
-      setKaraokeWords(words);
-    } else {
-      setKaraokeWords([]);
-    }
-    setCurrentWordIndex(0);
-    setSpokenWords([]);
-  };
 
-  // Reset step verification states
-  const resetStepVerification = () => {
-    setSpeechVerified(false);
-    setGestureVerified(false);
-    setComponentVerified(false);
-    setLockedGesture(null);
-    setLockedComponent(null);
-    setSpokenText("");
-    setInterimText("");
-    setSpokenWords([]);
-    setCurrentWordIndex(0);
-    setIsVerifying(false);
-    setVerificationStartTime(null);
-    setCurrentGesture(null);
-    gestureFramesRef.current = []; // Clear DTW frames
-    isClassifyingGestureRef.current = false; // Reset classification lock
-    setIsRecordingGesture(false);
-    setGestureRecordingComplete(false);
-  };
+
+
 
   // Countdown effect
   useEffect(() => {
     if (countdown === null) return;
-    
+
     if (countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
@@ -1148,7 +1209,7 @@ const Monitor = () => {
       gestureFramesRef.current = []; // Clear any old frames
       gestureStartTimeRef.current = Date.now();
       isClassifyingGestureRef.current = false; // Reset classification lock
-      
+
       // Start speech recognition automatically
       if (recognitionRef.current) {
         setSpokenText("");
@@ -1159,7 +1220,7 @@ const Monitor = () => {
           console.error("Failed to start speech recognition:", e);
         }
       }
-      
+
       toast.info("🖐️ GESTURE FIRST! Hold your gesture for 2 seconds...");
     }
   }, [countdown]);
@@ -1167,22 +1228,22 @@ const Monitor = () => {
   // Verification timeout - check if all requirements met
   useEffect(() => {
     if (!isVerifying || !verificationStartTime) return;
-    
+
     const checkInterval = setInterval(() => {
       const elapsed = Date.now() - verificationStartTime;
-      
+
       // Check if all verifications passed (gesture/component are locked once detected)
       const currentStep = selectedTask ? getStepsForTask(selectedTask)[currentStepIndex] : null;
-      
+
       // Gesture verified = locked or not required
       const gestureOk = !currentStep?.gestureId || lockedGesture !== null;
       // Component verified = locked or not required  
       const componentOk = !currentStep?.componentId || lockedComponent !== null;
       // Speech verified = matched or not required
       const speechOk = !currentStep?.speechPhrase || speechVerified;
-      
+
       const allVerified = gestureOk && componentOk && speechOk;
-      
+
       if (allVerified) {
         // Success! Move to next step
         setIsVerifying(false);
@@ -1193,11 +1254,11 @@ const Monitor = () => {
         if (recognitionRef.current) {
           recognitionRef.current.stop();
         }
-        
+
         // Show final summary
         toast.success("✅ STEP PASSED!", { duration: 2000 });
         console.log('[Verify] PASSED - Gesture:', lockedGesture, 'Component:', lockedComponent, 'Speech:', speechVerified);
-        
+
         handleCompleteStep();
       } else if (elapsed >= VERIFICATION_DURATION) {
         // Time's up - show final summary
@@ -1209,7 +1270,7 @@ const Monitor = () => {
         if (recognitionRef.current) {
           recognitionRef.current.stop();
         }
-        
+
         // Build summary of what passed/failed
         const results = [];
         if (currentStep?.gestureId) {
@@ -1221,65 +1282,20 @@ const Monitor = () => {
         if (currentStep?.speechPhrase) {
           results.push(speechVerified ? `✅ Speech: OK` : `❌ Speech: FAILED`);
         }
-        
+
         console.log('[Verify] FAILED - Summary:', results.join(', '));
         toast.error(`❌ STEP FAILED!\n${results.join('\n')}`, { duration: 4000 });
-        
+
         resetStepVerification();
       }
     }, 100);
-    
+
     return () => clearInterval(checkInterval);
   }, [isVerifying, verificationStartTime, speechVerified, selectedTask, currentStepIndex, lockedGesture, lockedComponent]);
 
-  const handleCompleteStep = () => {
-    if (!selectedTask) return;
-    
-    const wi = workInstructions.find(w => w.id === selectedTask.wiId);
-    const totalSteps = wi?.steps?.length || selectedTask.totalSteps;
-    
-    if (currentStepIndex < totalSteps - 1) {
-      setCurrentStepIndex(prev => prev + 1);
-      setStepVerified(false);
-      // Reset and start countdown for next step
-      resetStepVerification();
-      toast.success(`Step ${currentStepIndex + 1} verified! ✓`);
-      
-      // Auto-start next step countdown after a brief pause
-      setTimeout(() => {
-        startStepCountdown();
-      }, 1500);
-    } else {
-      setIsTaskActive(false);
-      setIsVerifying(false);
-      if (recognitionRef.current && isListening) {
-        recognitionRef.current.stop();
-        setIsListening(false);
-      }
-      setTasks(prev => prev.map(t => 
-        t.id === selectedTask.id 
-          ? { ...t, status: 'completed' as const, completedSteps: totalSteps }
-          : t
-      ));
-      setSelectedTask(prev => prev ? { ...prev, status: 'completed', completedSteps: totalSteps } : null);
-      toast.success("🎉 Task Completed Successfully!");
-    }
-  };
 
-  const getStepsForTask = (task: Task): WIStep[] => {
-    if (task.wiId) {
-      const wi = workInstructions.find(w => w.id === task.wiId);
-      return wi?.steps || [];
-    }
-    if (task.type === 'calibration') {
-      return [
-        { id: '1', gestureId: null, componentId: null, description: 'Verify camera position is correct and centered', speechPhrase: 'camera ready' },
-        { id: '2', gestureId: null, componentId: null, description: 'Check lighting conditions - ensure no shadows', speechPhrase: 'lighting check complete' },
-        { id: '3', gestureId: null, componentId: null, description: 'Perform T-Pose for 3 seconds to calibrate', speechPhrase: 'calibration done' },
-      ];
-    }
-    return [];
-  };
+
+
 
   const getTaskIcon = (type: string) => {
     switch (type) {
@@ -1341,15 +1357,15 @@ const Monitor = () => {
               {/* Permission Status */}
               {id === "emp-001" && (
                 <>
-                  <Badge 
-                    variant="outline" 
+                  <Badge
+                    variant="outline"
                     className={`text-xs ${cameraPermission === 'granted' ? 'border-green-500 text-green-500' : cameraPermission === 'denied' ? 'border-red-500 text-red-500' : 'border-yellow-500 text-yellow-500'}`}
                   >
                     <Video className="w-3 h-3 mr-1" />
                     {cameraPermission === 'granted' ? '✓' : cameraPermission === 'denied' ? '✗' : '?'}
                   </Badge>
-                  <Badge 
-                    variant="outline" 
+                  <Badge
+                    variant="outline"
                     className={`text-xs ${micPermission === 'granted' ? 'border-green-500 text-green-500' : micPermission === 'denied' ? 'border-red-500 text-red-500' : 'border-yellow-500 text-yellow-500'}`}
                   >
                     <Mic className="w-3 h-3 mr-1" />
@@ -1372,7 +1388,7 @@ const Monitor = () => {
       {/* Main Content */}
       <div className="container mx-auto px-4 py-4">
         <div className="grid grid-cols-12 gap-4 h-[calc(100vh-120px)]">
-          
+
           {/* Left: Camera + Task Details */}
           <div className="col-span-8 flex flex-col gap-4">
             {/* Camera Feed */}
@@ -1388,7 +1404,7 @@ const Monitor = () => {
                         muted
                         className="w-full h-full object-cover"
                       />
-                      <canvas 
+                      <canvas
                         ref={canvasRef}
                         className="absolute inset-0 w-full h-full pointer-events-none"
                       />
@@ -1398,7 +1414,7 @@ const Monitor = () => {
                       <VideoOff className="w-16 h-16 text-gray-600" />
                     </div>
                   )}
-                  
+
                   {/* Permission Request Overlay */}
                   {id === "emp-001" && !permissionsChecked && (
                     <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-30">
@@ -1427,10 +1443,10 @@ const Monitor = () => {
                         <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
                         <h3 className="text-xl font-bold mb-2">Permissions Required</h3>
                         <p className="text-white/70 mb-4">
-                          {cameraPermission === 'denied' && micPermission === 'denied' 
+                          {cameraPermission === 'denied' && micPermission === 'denied'
                             ? 'Camera and microphone access denied'
-                            : cameraPermission === 'denied' 
-                              ? 'Camera access denied' 
+                            : cameraPermission === 'denied'
+                              ? 'Camera access denied'
                               : 'Microphone access denied'}
                         </p>
                         <p className="text-sm text-white/50">
@@ -1439,7 +1455,7 @@ const Monitor = () => {
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Model Loading Indicator */}
                   {isLoadingModel && permissionsChecked && cameraPermission === 'granted' && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -1469,8 +1485,8 @@ const Monitor = () => {
 
                   {/* Camera Controls */}
                   <div className="absolute top-3 right-3 flex gap-2">
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant={isTestingGesture ? "destructive" : "secondary"}
                       onClick={startTestGesture}
                       disabled={isTestingGesture || isVerifying}
@@ -1479,8 +1495,8 @@ const Monitor = () => {
                       <Hand className="w-4 h-4" />
                       <span className="ml-1 text-xs">{isTestingGesture ? "Testing..." : "Test Gesture"}</span>
                     </Button>
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant={isListening ? "destructive" : "secondary"}
                       onClick={toggleListening}
                       className={isListening ? "animate-pulse" : ""}
@@ -1488,15 +1504,15 @@ const Monitor = () => {
                       {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                       <span className="ml-1 text-xs">{isListening ? "Stop" : "Test Speech"}</span>
                     </Button>
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant="secondary"
                       onClick={() => setIsLive(!isLive)}
                     >
                       {isLive ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
                     </Button>
                   </div>
-                  
+
                   {/* Test Speech Display - Shows what website hears */}
                   {isListening && !isVerifying && (
                     <div className="absolute bottom-4 left-4 right-4 z-10">
@@ -1519,7 +1535,7 @@ const Monitor = () => {
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Countdown Overlay */}
                   {countdown !== null && (
                     <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-20">
@@ -1565,16 +1581,15 @@ const Monitor = () => {
                   {/* Test Gesture Result */}
                   {testGestureResult && !isTestingGesture && (
                     <div className="absolute bottom-4 left-4 right-4 z-20">
-                      <div className={`rounded-xl px-5 py-4 border ${
-                        testGestureResult.includes('(') && !testGestureResult.includes('Error') 
-                          ? 'bg-green-900/90 border-green-500' 
+                      <div className={`rounded-xl px-5 py-4 border ${testGestureResult.includes('(') && !testGestureResult.includes('Error')
+                          ? 'bg-green-900/90 border-green-500'
                           : 'bg-red-900/90 border-red-500'
-                      }`}>
+                        }`}>
                         <div className="flex items-center justify-between">
                           <span className="text-white font-medium">{testGestureResult}</span>
-                          <Button 
-                            size="sm" 
-                            variant="ghost" 
+                          <Button
+                            size="sm"
+                            variant="ghost"
                             className="text-white hover:bg-white/10"
                             onClick={() => setTestGestureResult(null)}
                           >
@@ -1590,14 +1605,14 @@ const Monitor = () => {
                     <div className="absolute inset-0 pointer-events-none z-10">
                       {/* Timer bar at top */}
                       <div className="absolute top-0 left-0 right-0 h-2 bg-black/50">
-                        <div 
+                        <div
                           className="h-full bg-gradient-to-r from-green-500 to-yellow-500 transition-all duration-100"
                           style={{
                             width: `${Math.max(0, 100 - ((Date.now() - (verificationStartTime || 0)) / VERIFICATION_DURATION) * 100)}%`
                           }}
                         />
                       </div>
-                      
+
                       {/* Gesture Recording Phase Indicator */}
                       {isRecordingGesture && !gestureRecordingComplete && (
                         <div className="absolute top-4 left-4 right-4 flex justify-center">
@@ -1613,13 +1628,12 @@ const Monitor = () => {
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Gesture Complete - Now Speech */}
                       {gestureRecordingComplete && (
                         <div className="absolute top-4 left-4 right-4 flex justify-center">
-                          <div className={`rounded-xl px-6 py-3 border-2 ${
-                            lockedGesture ? 'bg-green-600/90 border-green-400' : 'bg-yellow-600/90 border-yellow-400'
-                          }`}>
+                          <div className={`rounded-xl px-6 py-3 border-2 ${lockedGesture ? 'bg-green-600/90 border-green-400' : 'bg-yellow-600/90 border-yellow-400'
+                            }`}>
                             <div className="flex items-center gap-3 text-white">
                               {lockedGesture ? (
                                 <>
@@ -1637,7 +1651,7 @@ const Monitor = () => {
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Karaoke words display */}
                       {karaokeWords.length > 0 && (
                         <div className="absolute bottom-20 left-0 right-0 flex justify-center">
@@ -1646,13 +1660,12 @@ const Monitor = () => {
                               {karaokeWords.map((word, idx) => (
                                 <span
                                   key={idx}
-                                  className={`transition-all duration-300 ${
-                                    idx < currentWordIndex
+                                  className={`transition-all duration-300 ${idx < currentWordIndex
                                       ? 'text-green-400 scale-95'
                                       : idx === currentWordIndex
                                         ? 'text-yellow-400 scale-110 animate-pulse'
                                         : 'text-white/50'
-                                  }`}
+                                    }`}
                                 >
                                   {word}
                                 </span>
@@ -1666,7 +1679,7 @@ const Monitor = () => {
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Verification status badges - show LOCKED status */}
                       <div className="absolute bottom-4 left-4 right-4 flex justify-center gap-3">
                         {currentTaskSteps[currentStepIndex]?.gestureId && (
@@ -1690,15 +1703,15 @@ const Monitor = () => {
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Task Overlay (when not verifying) */}
                   {isTaskActive && selectedTask && !isVerifying && countdown === null && (
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                       <div className="text-white">
                         <p className="text-sm opacity-70">Step {currentStepIndex + 1} of {currentTaskSteps.length}</p>
                         <p className="text-lg font-medium">{currentTaskSteps[currentStepIndex]?.description}</p>
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           className="mt-2"
                           onClick={startStepCountdown}
                         >
@@ -1714,11 +1727,10 @@ const Monitor = () => {
 
             {/* Task Requirements Panel - Below Webcam */}
             {isTaskActive && selectedTask && currentTaskSteps[currentStepIndex] && (
-              <Card className={`border-2 transition-all ${
-                isVerifying 
-                  ? 'border-yellow-500/50 bg-yellow-500/5' 
+              <Card className={`border-2 transition-all ${isVerifying
+                  ? 'border-yellow-500/50 bg-yellow-500/5'
                   : 'border-primary/20 bg-gradient-to-r from-primary/5 to-transparent'
-              }`}>
+                }`}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-semibold text-sm flex items-center gap-2">
@@ -1748,9 +1760,9 @@ const Monitor = () => {
                       )}
                       <Badge variant="outline" className="text-xs">
                         {[lockedGesture, lockedComponent, speechVerified].filter(Boolean).length}/
-                        {[currentTaskSteps[currentStepIndex]?.gestureId, 
-                          currentTaskSteps[currentStepIndex]?.componentId, 
-                          currentTaskSteps[currentStepIndex]?.speechPhrase].filter(Boolean).length || 1} Verified
+                        {[currentTaskSteps[currentStepIndex]?.gestureId,
+                        currentTaskSteps[currentStepIndex]?.componentId,
+                        currentTaskSteps[currentStepIndex]?.speechPhrase].filter(Boolean).length || 1} Verified
                       </Badge>
                     </div>
                   </div>
@@ -1759,66 +1771,63 @@ const Monitor = () => {
                   <div className="mb-4 p-3 bg-muted/30 rounded-lg">
                     <p className="text-sm font-medium">{currentTaskSteps[currentStepIndex]?.description}</p>
                   </div>
-                  
+
                   <div className="grid grid-cols-3 gap-4">
                     {/* Gesture Requirement - shows LOCKED status */}
-                    <div className={`p-3 rounded-lg border-2 transition-all ${
-                      !currentTaskSteps[currentStepIndex]?.gestureId 
-                        ? 'border-muted bg-muted/20 opacity-50' 
+                    <div className={`p-3 rounded-lg border-2 transition-all ${!currentTaskSteps[currentStepIndex]?.gestureId
+                        ? 'border-muted bg-muted/20 opacity-50'
                         : lockedGesture
-                          ? 'border-green-500 bg-green-500/10' 
+                          ? 'border-green-500 bg-green-500/10'
                           : isVerifying
                             ? 'border-orange-500 bg-orange-500/10 animate-pulse'
                             : 'border-orange-500/50 bg-orange-500/5'
-                    }`}>
+                      }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Hand className={`w-5 h-5 ${lockedGesture ? 'text-green-500' : 'text-orange-500'}`} />
                         <span className="font-medium text-sm">Gesture</span>
                         {lockedGesture && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
                       </div>
                       <p className="text-sm font-medium">
-                        {lockedGesture 
+                        {lockedGesture
                           ? `✓ ${lockedGesture}`
-                          : currentTaskSteps[currentStepIndex]?.gestureId 
+                          : currentTaskSteps[currentStepIndex]?.gestureId
                             ? trainedGestures.find(g => g.id === currentTaskSteps[currentStepIndex]?.gestureId)?.name || currentTaskSteps[currentStepIndex]?.gestureId
                             : 'None required'}
                       </p>
                     </div>
 
                     {/* Component Requirement - shows LOCKED status */}
-                    <div className={`p-3 rounded-lg border-2 transition-all ${
-                      !currentTaskSteps[currentStepIndex]?.componentId 
-                        ? 'border-muted bg-muted/20 opacity-50' 
-                        : lockedComponent 
-                          ? 'border-green-500 bg-green-500/10' 
+                    <div className={`p-3 rounded-lg border-2 transition-all ${!currentTaskSteps[currentStepIndex]?.componentId
+                        ? 'border-muted bg-muted/20 opacity-50'
+                        : lockedComponent
+                          ? 'border-green-500 bg-green-500/10'
                           : isVerifying
                             ? 'border-orange-500 bg-orange-500/10 animate-pulse'
                             : 'border-orange-500/50 bg-orange-500/5'
-                    }`}>
+                      }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Box className={`w-5 h-5 ${lockedComponent ? 'text-green-500' : 'text-orange-500'}`} />
                         <span className="font-medium text-sm">Component</span>
                         {lockedComponent && <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />}
                       </div>
                       <p className="text-sm font-medium">
-                        {lockedComponent 
+                        {lockedComponent
                           ? `✓ ${lockedComponent}`
-                          : currentTaskSteps[currentStepIndex]?.componentId 
+                          : currentTaskSteps[currentStepIndex]?.componentId
                             ? trainedComponents[parseInt(currentTaskSteps[currentStepIndex]?.componentId || '0') - 1] || 'Component'
                             : 'None required'}
                       </p>
                     </div>
 
                     {/* Speech Requirement with Karaoke Preview */}
-                    <div className={`p-3 rounded-lg border-2 transition-all ${
-                      !currentTaskSteps[currentStepIndex]?.speechPhrase 
-                        ? 'border-muted bg-muted/20 opacity-50' 
-                        : speechVerified 
-                          ? 'border-green-500 bg-green-500/10' 
+                    <div className={`p-3 rounded-lg border-2 transition-all ${!currentTaskSteps[currentStepIndex]?.speechPhrase
+                        ? 'border-muted bg-muted/20 opacity-50'
+                        : speechVerified
+                          ? 'border-green-500 bg-green-500/10'
                           : isVerifying
                             ? 'border-blue-500 bg-blue-500/10 animate-pulse'
                             : 'border-blue-500/50 bg-blue-500/5'
-                    }`}>
+                      }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Volume2 className={`w-5 h-5 ${speechVerified ? 'text-green-500' : 'text-blue-500'}`} />
                         <span className="font-medium text-sm">Speech</span>
@@ -1828,7 +1837,7 @@ const Monitor = () => {
                         )}
                       </div>
                       <p className="text-sm font-medium">
-                        {currentTaskSteps[currentStepIndex]?.speechPhrase 
+                        {currentTaskSteps[currentStepIndex]?.speechPhrase
                           ? `"${currentTaskSteps[currentStepIndex]?.speechPhrase}"`
                           : 'None required'}
                       </p>
@@ -1847,8 +1856,8 @@ const Monitor = () => {
                         <span>Time Remaining</span>
                         <span>{Math.max(0, Math.ceil((VERIFICATION_DURATION - (Date.now() - verificationStartTime)) / 1000))}s</span>
                       </div>
-                      <Progress 
-                        value={Math.max(0, 100 - ((Date.now() - verificationStartTime) / VERIFICATION_DURATION) * 100)} 
+                      <Progress
+                        value={Math.max(0, 100 - ((Date.now() - verificationStartTime) / VERIFICATION_DURATION) * 100)}
                         className="h-2"
                       />
                     </div>
@@ -1891,25 +1900,23 @@ const Monitor = () => {
                         {currentTaskSteps.map((step, index) => {
                           const gestureName = step.gestureId ? trainedGestures.find(g => g.id === step.gestureId)?.name : null;
                           const componentName = step.componentId ? trainedComponents[parseInt(step.componentId) - 1] : null;
-                          
+
                           return (
-                            <div 
+                            <div
                               key={step.id}
-                              className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${
-                                isTaskActive && index === currentStepIndex
+                              className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${isTaskActive && index === currentStepIndex
                                   ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
                                   : index < currentStepIndex || selectedTask.status === 'completed'
                                     ? 'border-green-500/30 bg-green-500/5'
                                     : 'border-border'
-                              }`}
+                                }`}
                             >
-                              <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                index < currentStepIndex || selectedTask.status === 'completed'
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${index < currentStepIndex || selectedTask.status === 'completed'
                                   ? 'bg-green-500 text-white'
                                   : isTaskActive && index === currentStepIndex
                                     ? 'bg-primary text-primary-foreground'
                                     : 'bg-muted text-muted-foreground'
-                              }`}>
+                                }`}>
                                 {index < currentStepIndex || selectedTask.status === 'completed' ? (
                                   <CheckCircle2 className="w-4 h-4" />
                                 ) : (
@@ -1988,11 +1995,10 @@ const Monitor = () => {
                       <div
                         key={task.id}
                         onClick={() => handleSelectTask(task)}
-                        className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                          selectedTask?.id === task.id
+                        className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedTask?.id === task.id
                             ? 'border-primary bg-primary/5'
                             : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                        } ${task.status === 'completed' ? 'opacity-60' : ''}`}
+                          } ${task.status === 'completed' ? 'opacity-60' : ''}`}
                       >
                         <div className="flex items-start gap-3">
                           {getTaskIcon(task.type)}
@@ -2019,19 +2025,19 @@ const Monitor = () => {
                   )}
                 </div>
               </ScrollArea>
-              
+
               <div className="p-3 border-t flex-shrink-0 space-y-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="w-full"
                   onClick={() => navigate("/manage-team")}
                 >
                   Manage WI Assignments
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="w-full"
                   onClick={() => navigate("/training")}
                 >
