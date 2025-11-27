@@ -587,5 +587,166 @@ node server.js   # Backend (port 3000)
 - `gesture_workflow/scripts/dtw_gesture.py` - DTW classifier
 - `server.js` - Backend API
 
+---
+
+## Session: November 27, 2025 - Verification Flow Redesign (Option A)
+
+### Problem
+The verification system was too complex and unreliable:
+- Multiple overlapping mechanisms (callbacks, useEffects, timeouts)
+- Race conditions between state updates
+- Gesture would detect correctly but step still failed at timeout
+- `lockedGesture` never getting set properly
+
+### Solution: Complete Simplification (Option A)
+
+#### Phase 1: Remove Complex Logic
+1. **Removed complex verification timeout useEffect** (~60 lines)
+   - Was checking `verificationStartTime` and `VERIFICATION_DURATION` every 100ms
+   - Caused race conditions with gesture classification
+   
+2. **Removed auto-verify useEffect**
+   - Matching now handled directly in verification function
+   
+3. **Cleaned up unused state variables**
+   - Simplified UI overlays
+
+#### Phase 2: Create Two Identical Functions
+Created `startTestGesture()` and `startStepVerification()` with SAME flow:
+```
+Countdown 3-2-1 → Wait for hand → Record 3s → Classify DTW → Show result
+```
+
+The only difference: `startStepVerification()` also checks if gesture matches required and completes step.
+
+### Result
+- Test Gesture button works ✅
+- Step Verification uses same logic ✅
+- No more race conditions ✅
+- Much cleaner code (-213 lines net)
+
+---
+
+## Session: November 27, 2025 (Evening) - Parallel Speech + Gesture
+
+### Goal
+Run speech recognition and gesture detection simultaneously for efficient verification.
+
+### Architecture
+```
+┌────────────────────────────────────────┐
+│        User clicks "Start"              │
+└────────────────────────────────────────┘
+                    │
+                    ▼
+┌────────────────────────────────────────┐
+│          Countdown 3-2-1                │
+└────────────────────────────────────────┘
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+┌─────────────────┐   ┌─────────────────┐
+│  GESTURE (3s)   │   │  SPEECH (5s)    │
+│  Record frames  │   │  Web Speech API │
+│  DTW classify   │   │  (Browser only) │
+│  (Server call)  │   │  (Zero server)  │
+└─────────────────┘   └─────────────────┘
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+┌────────────────────────────────────────┐
+│  Both pass? → STEP COMPLETE            │
+│  One fails? → Show which failed        │
+└────────────────────────────────────────┘
+```
+
+### Server Load: Still Just 1 API Call!
+| Component | Where It Runs | Server Load |
+|-----------|---------------|-------------|
+| Gesture Detection | Server (DTW API) | 1 call |
+| Speech Detection | Browser (Web Speech API) | **ZERO** |
+
+### Problem Encountered: Speech Showing "nothing"
+**Symptom**: User said "hello", UI showed "hello" during recording, but result showed "Speech: nothing"
+
+**Root Cause**: Stale closure - the `spokenText` state variable was read inside the async function, but it captured the initial empty value.
+
+**Solution**: Added `spokenTextRef` to track speech in real-time:
+```typescript
+const spokenTextRef = useRef(""); // Track spoken text for closures
+
+// In speech recognition callback:
+setSpokenText(prev => {
+  const newText = (prev + ' ' + finalTranscript).trim();
+  spokenTextRef.current = newText; // Sync ref!
+  return newText;
+});
+
+// In verification function:
+const capturedSpeechText = spokenTextRef.current; // Always current!
+```
+
+### UI Improvements
+1. **Checkmarks on Verified Items**
+   - Gesture box turns green with ✓ when matched
+   - Speech box turns green with ✓ when matched
+   
+2. **Verified Progress Badge**
+   - Shows "X/Y Verified" (e.g., "1/2 Verified", "2/2 Verified")
+   
+3. **Real-time Speech Feedback**
+   - Shows what you're saying during recording
+   - Displays both interim and final transcripts
+
+4. **Result Display**
+   - Shows: `GoodJob (85%) | 🎤✓ | 2/2`
+   - Or on failure: `GoodJob (85%) | 🎤✗ | 1/2`
+
+### Files Modified
+- `src/pages/Monitor.tsx`:
+  - Added `spokenTextRef` for real-time speech tracking
+  - Updated `startStepVerification()` for parallel execution
+  - Set `lockedGesture` and `speechVerified` states properly
+  - Updated UI to use `isTestingGesture` instead of `isVerifying`
+  - Added verified count to badge
+
+### Current Status
+- ✅ Parallel gesture + speech detection working
+- ✅ Speech capture issue fixed (no more "nothing")
+- ✅ UI shows checkmarks and progress
+- ✅ Real-time feedback during recording
+- ✅ Zero additional server load for speech
+
+---
+
+## Quick Reference (Updated)
+
+### Start Development
+```bash
+cd /home/noclout/employee-monitor-view
+npm run dev      # Vite (port 8080)
+node server.js   # Backend (port 3000)
+```
+
+### Test Gesture (Standalone)
+1. Open Monitor page: http://localhost:8080/monitor/emp-001
+2. Click "🖐️ Test Gesture" button
+3. Countdown 3-2-1
+4. Show gesture for 3 seconds
+5. See result with confidence %
+
+### Step Verification (With Speech)
+1. Select a task with gesture + speech requirements
+2. Click "Start Step Verification"
+3. Countdown 3-2-1
+4. Show gesture AND speak the phrase
+5. See combined result: gesture ✓/✗ | speech ✓/✗ | X/Y
+
+### Key Architecture
+- **Gesture**: Browser records → Server classifies (1 API call)
+- **Speech**: Browser handles everything (0 API calls)
+- **Both run in parallel** for efficient verification
+
+
 
 
