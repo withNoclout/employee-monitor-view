@@ -719,6 +719,104 @@ const capturedSpeechText = spokenTextRef.current; // Always current!
 
 ---
 
+## Session: November 27, 2025 (Late Evening) - Task Persistence
+
+### User Request
+> "any task that has been checked go to uncheck when we restart the website make that permanently"
+> "if it daily task just make another task when it pass the day"
+
+### Problem
+- Completed tasks reset to "pending" on page reload
+- No history tracking for policy compliance
+- Daily tasks don't differentiate between different days
+
+### Solution Implemented
+
+#### 1. Extended Task Interface
+```typescript
+interface Task {
+  // ... existing fields
+  dateKey?: string;       // "2025-11-27" for daily, "2025-11-w4" for weekly
+  completedAt?: string;   // ISO timestamp when completed
+  employeeId?: string;    // Which employee completed this
+}
+```
+
+#### 2. Date-Based Task ID Generation
+```typescript
+const generateTaskId = (wiId: string, type: string, frequency: string) => {
+  const today = getTodayKey(); // "2025-11-27"
+  
+  if (frequency === 'Daily') {
+    return { id: `task-${wiId}-${today}`, dateKey: today };
+  } else if (frequency === 'Weekly') {
+    const weekNum = Math.ceil((new Date().getDate()) / 7);
+    const monthKey = new Date().toISOString().slice(0, 7);
+    return { id: `task-${wiId}-${monthKey}-w${weekNum}`, dateKey: `${monthKey}-w${weekNum}` };
+  } else if (frequency === 'Monthly') {
+    const monthKey = new Date().toISOString().slice(0, 7);
+    return { id: `task-${wiId}-${monthKey}`, dateKey: monthKey };
+  }
+  return { id: `task-${wiId}`, dateKey: undefined };
+};
+```
+
+#### 3. Persistence Helpers
+```typescript
+const loadSavedTasks = (employeeId: string): Task[] => {
+  const saved = localStorage.getItem(`employee_tasks_${employeeId}`);
+  return saved ? JSON.parse(saved) : [];
+};
+
+const saveTasks = (employeeId: string, tasks: Task[]) => {
+  localStorage.setItem(`employee_tasks_${employeeId}`, JSON.stringify(tasks));
+};
+```
+
+#### 4. Task Completion Flow
+On task complete:
+1. Set `completedAt` timestamp
+2. Update task status in state
+3. Save all tasks to localStorage immediately
+
+On page load:
+1. Generate tasks with date-based IDs
+2. Load saved tasks from localStorage
+3. Merge saved states (status, completedSteps, completedAt) into generated tasks
+4. Display properly showing previously completed tasks
+
+### How It Works
+
+**Daily Tasks:**
+- November 27: `task-wi123-2025-11-27` → can be completed
+- November 28: `task-wi123-2025-11-28` → NEW task (yesterday's stays completed)
+
+**Monthly Tasks:**
+- November: `task-calibration-2025-11` → can be completed
+- December: `task-calibration-2025-12` → NEW task
+
+**One-Time Tasks:**
+- `task-wi456` → stays completed forever
+
+### Policy Compliance
+This enables:
+- ✅ Daily task completion tracking
+- ✅ Historical record of when tasks were done
+- ✅ New task instances for each day/week/month
+- ✅ Audit trail via localStorage
+
+### Files Modified
+- `src/pages/Monitor.tsx`:
+  - Extended Task interface
+  - Added persistence helper functions
+  - Updated task generation useEffect
+  - Updated handleCompleteStep to save tasks
+
+### Git Commit
+`da8a0ca` - "feat: add persistent task completion with daily task instances"
+
+---
+
 ## Quick Reference (Updated)
 
 ### Start Development
