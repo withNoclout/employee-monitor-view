@@ -697,6 +697,7 @@ const Monitor = () => {
     setLockedComponent(null);
     setSpokenText("");
     setInterimText("");
+    spokenTextRef.current = ""; // Clear speech ref to prevent stale text leaking
     setSpokenWords([]);
     setCurrentWordIndex(0);
     setIsVerifying(false);
@@ -706,6 +707,12 @@ const Monitor = () => {
     isClassifyingGestureRef.current = false; // Reset classification lock
     setIsRecordingGesture(false);
     setGestureRecordingComplete(false);
+    // Stop any lingering speech recognition
+    if (recognitionRef.current && isListeningRef.current) {
+      isListeningRef.current = false;
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
   }, []);
 
   // Soft reset - keeps what's already verified (for retry)
@@ -1466,10 +1473,13 @@ const Monitor = () => {
     setGestureVerified(false);
     setComponentVerified(false);
     setSpokenText("");
+    spokenTextRef.current = ""; // Clear speech ref
     setSpokenWords([]);
     setKaraokeWords([]);
     setCurrentWordIndex(0);
-    if (recognitionRef.current && isListening) {
+    // Always stop recognition when switching tasks
+    if (recognitionRef.current) {
+      isListeningRef.current = false;
       recognitionRef.current.stop();
       setIsListening(false);
     }
