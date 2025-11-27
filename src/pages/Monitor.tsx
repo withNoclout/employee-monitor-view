@@ -125,6 +125,7 @@ const Monitor = () => {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [workInstructions, setWorkInstructions] = useState<WorkInstruction[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const currentStepIndexRef = useRef(currentStepIndex); // Ref to avoid stale closures
   const [isTaskActive, setIsTaskActive] = useState(false);
 
   // Countdown & Step Verification State
@@ -724,7 +725,9 @@ const Monitor = () => {
   const startStepVerification = async () => {
     if (!selectedTask || !isTaskActive || !detector) return;
 
-    const currentStep = getStepsForTask(selectedTask)[currentStepIndex];
+    // Use ref to get CURRENT step index (avoids stale closure from setTimeout)
+    const stepIndex = currentStepIndexRef.current;
+    const currentStep = getStepsForTask(selectedTask)[stepIndex];
     const requiredGestureId = currentStep?.gestureId;
     const requiredSpeechPhrase = currentStep?.speechPhrase;
     
@@ -736,7 +739,7 @@ const Monitor = () => {
     console.log('[StepVerify] Starting parallel verification...', { 
       requiredGesture: requiredGesture?.name || 'none',
       requiredSpeech: requiredSpeechPhrase || 'none',
-      stepIndex: currentStepIndex 
+      stepIndex: stepIndex 
     });
 
     // Reset speech state for this verification
@@ -963,7 +966,9 @@ const Monitor = () => {
     const totalSteps = wi?.steps?.length || selectedTask.totalSteps;
 
     if (currentStepIndex < totalSteps - 1) {
-      setCurrentStepIndex(prev => prev + 1);
+      const nextStepIndex = currentStepIndex + 1;
+      setCurrentStepIndex(nextStepIndex);
+      currentStepIndexRef.current = nextStepIndex; // Update ref immediately for setTimeout closure
       setStepVerified(false);
       // Reset and start countdown for next step
       resetStepVerification();
@@ -1448,6 +1453,7 @@ const Monitor = () => {
   const handleSelectTask = (task: Task) => {
     setSelectedTask(task);
     setCurrentStepIndex(0);
+    currentStepIndexRef.current = 0; // Sync ref
     setIsTaskActive(false);
     setStepVerified(false);
     setIsVerifying(false);
@@ -1470,6 +1476,7 @@ const Monitor = () => {
     if (!selectedTask) return;
     setIsTaskActive(true);
     setCurrentStepIndex(0);
+    currentStepIndexRef.current = 0; // Sync ref
     setStepVerified(false);
     // Reset all verification states for first step
     resetStepVerification();
