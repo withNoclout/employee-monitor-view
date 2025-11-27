@@ -642,6 +642,93 @@ const Monitor = () => {
     setGestureRecordingComplete(false);
   }, []);
 
+  // Perform one-shot gesture verification (mimics Test Gesture)
+  const performGestureVerification = async () => {
+    if (!selectedTask || !isTaskActive) return;
+
+    console.log('[Verify] Starting one-shot gesture verification...');
+    setIsVerifying(true);
+    setIsRecordingGesture(true);
+    setGestureRecordingComplete(false);
+    gestureFramesRef.current = []; // Clear previous frames
+
+    // Start speech recognition immediately
+    if (recognitionRef.current) {
+      setSpokenText("");
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (e) {
+        console.error("Failed to start speech recognition:", e);
+      }
+    }
+
+    toast.info("🖐️ RECORDING GESTURE... Hold still!");
+
+    const RECORD_DURATION = 3000;
+    const startTime = Date.now();
+    setVerificationStartTime(startTime); // Start the overall verification timer
+
+    // Recording Loop
+    while (Date.now() - startTime < RECORD_DURATION) {
+      // Check if we should stop
+      if (!isTaskActive) break;
+
+      const elapsed = Date.now() - startTime;
+      const hands = lastHandsRef.current;
+
+      if (hands.length > 0) {
+        let leftHand = null;
+        let rightHand = null;
+
+        hands.forEach(hand => {
+          const handData = extractHandLandmarks(hand);
+          if (hand.handedness === 'Left') leftHand = handData;
+          else rightHand = handData;
+        });
+
+        gestureFramesRef.current.push({
+          timestamp: elapsed,
+          left_hand: leftHand,
+          right_hand: rightHand
+        });
+      }
+
+      await new Promise(r => setTimeout(r, 33)); // ~30fps
+    }
+
+    setIsRecordingGesture(false);
+    console.log(`[Verify] Recording complete! ${gestureFramesRef.current.length} frames`);
+
+    // Classify
+    if (gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW) {
+      try {
+        const result = await classifyGestureDTW(gestureFramesRef.current);
+        setGestureRecordingComplete(true);
+
+        if (result) {
+          setCurrentGesture(result.gesture);
+          // Check if it matches
+          checkStepVerification(result.gesture, result.confidence, currentComponents);
+
+          if (result.confidence > LOCK_CONFIDENCE) {
+            toast.success(`Detected: ${result.gesture}`);
+          } else {
+            toast.warning(`Gesture unclear: ${result.gesture}`);
+          }
+        }
+      } catch (err) {
+        console.error("Verification failed:", err);
+        toast.error("Verification failed");
+      }
+    } else {
+      toast.error("No gesture detected (too few frames)");
+      setGestureRecordingComplete(true);
+    }
+
+    toast.info("🎤 Now speak the phrase!");
+  };
+
   // Start countdown before step verification
   const startStepCountdown = useCallback(() => {
     setCountdown(3);
@@ -816,65 +903,6 @@ const Monitor = () => {
           });
         }
 
-        // Collect frames for DTW verification - during gesture recording phase only
-        if (!lockedGesture && isVerifying && isRecordingGesture && !gestureRecordingComplete && hands.length > 0) {
-          const elapsed = Date.now() - gestureStartTimeRef.current;
-
-          // Extract landmarks in same format as Training.tsx
-          let leftHand = null;
-          let rightHand = null;
-
-          hands.forEach(hand => {
-            const handData = extractHandLandmarks(hand);
-            if (hand.handedness === 'Left') leftHand = handData;
-            else rightHand = handData;
-          });
-
-          // Record frame (same format as Training.tsx)
-          gestureFramesRef.current.push({
-            timestamp: elapsed,
-            left_hand: leftHand,
-            right_hand: rightHand
-          });
-
-          // After GESTURE_RECORD_DURATION, classify ONCE (use ref flag to prevent multiple calls)
-          if (elapsed >= GESTURE_RECORD_DURATION && gestureFramesRef.current.length >= MIN_FRAMES_FOR_DTW && !isClassifyingGestureRef.current) {
-            isClassifyingGestureRef.current = true; // LOCK - prevent multiple API calls
-            console.log(`[Verify] Recording complete! ${gestureFramesRef.current.length} frames in ${elapsed}ms`);
-            setIsRecordingGesture(false);
-
-            // Classify with all collected frames (copy array to avoid mutations)
-            const framesToClassify = [...gestureFramesRef.current];
-            gestureFramesRef.current = []; // Clear immediately
-
-            classifyGestureDTW(framesToClassify).then(result => {
-              console.log('[Verify] DTW result:', result);
-              setGestureRecordingComplete(true);
-
-              if (result && result.confidence > LOCK_CONFIDENCE) {
-                setCurrentGesture(result.gesture);
-                console.log(`[Verify] Detected: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
-
-                // Check step verification with DTW result
-                if (isVerifying && !lockedGesture) {
-                  checkStepVerification(result.gesture, result.confidence, currentComponents);
-                }
-
-                toast.success(`🖐️ Gesture: ${result.gesture} (${(result.confidence * 100).toFixed(0)}%)`);
-              } else {
-                console.log(`[Verify] Low confidence or no result`);
-                setCurrentGesture(result?.gesture || 'unknown');
-                toast.warning(`⚠️ Gesture unclear: ${result?.gesture || 'none'} (${((result?.confidence || 0) * 100).toFixed(0)}%)`);
-              }
-
-              toast.info("🎤 Now speak the phrase!");
-            }).catch(err => {
-              console.error('[Verify] DTW classification failed:', err);
-              setGestureRecordingComplete(true);
-              toast.error("Gesture classification failed");
-            });
-          }
-        }
 
         // Update current gesture display (may be overwritten by DTW async result)
         if (!lockedGesture) {
@@ -1200,28 +1228,9 @@ const Monitor = () => {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
     } else {
-      // Countdown finished - start verification with gesture recording phase
+      // Countdown finished - start one-shot verification
       setCountdown(null);
-      setIsVerifying(true);
-      setIsRecordingGesture(true); // Start gesture recording phase
-      setGestureRecordingComplete(false);
-      setVerificationStartTime(Date.now());
-      gestureFramesRef.current = []; // Clear any old frames
-      gestureStartTimeRef.current = Date.now();
-      isClassifyingGestureRef.current = false; // Reset classification lock
-
-      // Start speech recognition automatically
-      if (recognitionRef.current) {
-        setSpokenText("");
-        try {
-          recognitionRef.current.start();
-          setIsListening(true);
-        } catch (e) {
-          console.error("Failed to start speech recognition:", e);
-        }
-      }
-
-      toast.info("🖐️ GESTURE FIRST! Hold your gesture for 2 seconds...");
+      performGestureVerification();
     }
   }, [countdown]);
 
@@ -1582,8 +1591,8 @@ const Monitor = () => {
                   {testGestureResult && !isTestingGesture && (
                     <div className="absolute bottom-4 left-4 right-4 z-20">
                       <div className={`rounded-xl px-5 py-4 border ${testGestureResult.includes('(') && !testGestureResult.includes('Error')
-                          ? 'bg-green-900/90 border-green-500'
-                          : 'bg-red-900/90 border-red-500'
+                        ? 'bg-green-900/90 border-green-500'
+                        : 'bg-red-900/90 border-red-500'
                         }`}>
                         <div className="flex items-center justify-between">
                           <span className="text-white font-medium">{testGestureResult}</span>
@@ -1661,10 +1670,10 @@ const Monitor = () => {
                                 <span
                                   key={idx}
                                   className={`transition-all duration-300 ${idx < currentWordIndex
-                                      ? 'text-green-400 scale-95'
-                                      : idx === currentWordIndex
-                                        ? 'text-yellow-400 scale-110 animate-pulse'
-                                        : 'text-white/50'
+                                    ? 'text-green-400 scale-95'
+                                    : idx === currentWordIndex
+                                      ? 'text-yellow-400 scale-110 animate-pulse'
+                                      : 'text-white/50'
                                     }`}
                                 >
                                   {word}
@@ -1728,8 +1737,8 @@ const Monitor = () => {
             {/* Task Requirements Panel - Below Webcam */}
             {isTaskActive && selectedTask && currentTaskSteps[currentStepIndex] && (
               <Card className={`border-2 transition-all ${isVerifying
-                  ? 'border-yellow-500/50 bg-yellow-500/5'
-                  : 'border-primary/20 bg-gradient-to-r from-primary/5 to-transparent'
+                ? 'border-yellow-500/50 bg-yellow-500/5'
+                : 'border-primary/20 bg-gradient-to-r from-primary/5 to-transparent'
                 }`}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -1775,12 +1784,12 @@ const Monitor = () => {
                   <div className="grid grid-cols-3 gap-4">
                     {/* Gesture Requirement - shows LOCKED status */}
                     <div className={`p-3 rounded-lg border-2 transition-all ${!currentTaskSteps[currentStepIndex]?.gestureId
-                        ? 'border-muted bg-muted/20 opacity-50'
-                        : lockedGesture
-                          ? 'border-green-500 bg-green-500/10'
-                          : isVerifying
-                            ? 'border-orange-500 bg-orange-500/10 animate-pulse'
-                            : 'border-orange-500/50 bg-orange-500/5'
+                      ? 'border-muted bg-muted/20 opacity-50'
+                      : lockedGesture
+                        ? 'border-green-500 bg-green-500/10'
+                        : isVerifying
+                          ? 'border-orange-500 bg-orange-500/10 animate-pulse'
+                          : 'border-orange-500/50 bg-orange-500/5'
                       }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Hand className={`w-5 h-5 ${lockedGesture ? 'text-green-500' : 'text-orange-500'}`} />
@@ -1798,12 +1807,12 @@ const Monitor = () => {
 
                     {/* Component Requirement - shows LOCKED status */}
                     <div className={`p-3 rounded-lg border-2 transition-all ${!currentTaskSteps[currentStepIndex]?.componentId
-                        ? 'border-muted bg-muted/20 opacity-50'
-                        : lockedComponent
-                          ? 'border-green-500 bg-green-500/10'
-                          : isVerifying
-                            ? 'border-orange-500 bg-orange-500/10 animate-pulse'
-                            : 'border-orange-500/50 bg-orange-500/5'
+                      ? 'border-muted bg-muted/20 opacity-50'
+                      : lockedComponent
+                        ? 'border-green-500 bg-green-500/10'
+                        : isVerifying
+                          ? 'border-orange-500 bg-orange-500/10 animate-pulse'
+                          : 'border-orange-500/50 bg-orange-500/5'
                       }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Box className={`w-5 h-5 ${lockedComponent ? 'text-green-500' : 'text-orange-500'}`} />
@@ -1821,12 +1830,12 @@ const Monitor = () => {
 
                     {/* Speech Requirement with Karaoke Preview */}
                     <div className={`p-3 rounded-lg border-2 transition-all ${!currentTaskSteps[currentStepIndex]?.speechPhrase
-                        ? 'border-muted bg-muted/20 opacity-50'
-                        : speechVerified
-                          ? 'border-green-500 bg-green-500/10'
-                          : isVerifying
-                            ? 'border-blue-500 bg-blue-500/10 animate-pulse'
-                            : 'border-blue-500/50 bg-blue-500/5'
+                      ? 'border-muted bg-muted/20 opacity-50'
+                      : speechVerified
+                        ? 'border-green-500 bg-green-500/10'
+                        : isVerifying
+                          ? 'border-blue-500 bg-blue-500/10 animate-pulse'
+                          : 'border-blue-500/50 bg-blue-500/5'
                       }`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Volume2 className={`w-5 h-5 ${speechVerified ? 'text-green-500' : 'text-blue-500'}`} />
@@ -1905,17 +1914,17 @@ const Monitor = () => {
                             <div
                               key={step.id}
                               className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${isTaskActive && index === currentStepIndex
-                                  ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                                  : index < currentStepIndex || selectedTask.status === 'completed'
-                                    ? 'border-green-500/30 bg-green-500/5'
-                                    : 'border-border'
+                                ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                                : index < currentStepIndex || selectedTask.status === 'completed'
+                                  ? 'border-green-500/30 bg-green-500/5'
+                                  : 'border-border'
                                 }`}
                             >
                               <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${index < currentStepIndex || selectedTask.status === 'completed'
-                                  ? 'bg-green-500 text-white'
-                                  : isTaskActive && index === currentStepIndex
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'bg-muted text-muted-foreground'
+                                ? 'bg-green-500 text-white'
+                                : isTaskActive && index === currentStepIndex
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'bg-muted text-muted-foreground'
                                 }`}>
                                 {index < currentStepIndex || selectedTask.status === 'completed' ? (
                                   <CheckCircle2 className="w-4 h-4" />
@@ -1996,8 +2005,8 @@ const Monitor = () => {
                         key={task.id}
                         onClick={() => handleSelectTask(task)}
                         className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedTask?.id === task.id
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
                           } ${task.status === 'completed' ? 'opacity-60' : ''}`}
                       >
                         <div className="flex items-start gap-3">
