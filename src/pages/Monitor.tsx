@@ -45,6 +45,10 @@ interface Task {
   status: 'pending' | 'in-progress' | 'completed';
   completedSteps: number;
   totalSteps: number;
+  // New fields for persistence
+  dateKey?: string; // e.g., "2025-11-27" for daily tasks
+  completedAt?: string; // ISO timestamp when completed
+  employeeId?: string; // Which employee completed this
 }
 
 interface TrainedGesture {
@@ -59,6 +63,50 @@ interface Detection {
   confidence: number;
   bbox: { x1: number; y1: number; x2: number; y2: number };
 }
+
+// Helper functions for task persistence
+const getTodayKey = () => new Date().toISOString().split('T')[0]; // "2025-11-27"
+
+const getTaskStorageKey = (employeeId: string) => `employee_tasks_${employeeId}`;
+
+const loadSavedTasks = (employeeId: string): Task[] => {
+  try {
+    const saved = localStorage.getItem(getTaskStorageKey(employeeId));
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveTasks = (employeeId: string, tasks: Task[]) => {
+  try {
+    localStorage.setItem(getTaskStorageKey(employeeId), JSON.stringify(tasks));
+  } catch (e) {
+    console.error('Failed to save tasks:', e);
+  }
+};
+
+// Generate task ID based on type and date
+const generateTaskId = (wiId: string, type: string, frequency: string): { id: string; dateKey: string | undefined } => {
+  const today = getTodayKey();
+  
+  if (frequency === 'Daily') {
+    // Daily tasks get a date-specific ID
+    return { id: `task-${wiId}-${today}`, dateKey: today };
+  } else if (frequency === 'Weekly') {
+    // Weekly tasks get week number
+    const weekNum = Math.ceil((new Date().getDate()) / 7);
+    const monthKey = new Date().toISOString().slice(0, 7); // "2025-11"
+    return { id: `task-${wiId}-${monthKey}-w${weekNum}`, dateKey: `${monthKey}-w${weekNum}` };
+  } else if (frequency === 'Monthly') {
+    // Monthly tasks get month key
+    const monthKey = new Date().toISOString().slice(0, 7); // "2025-11"
+    return { id: `task-${wiId}-${monthKey}`, dateKey: monthKey };
+  }
+  
+  // One-time or other tasks just use wiId
+  return { id: `task-${wiId}`, dateKey: undefined };
+};
 
 const Monitor = () => {
   const { id } = useParams<{ id: string }>();
@@ -926,21 +974,35 @@ const Monitor = () => {
         startStepCountdown();
       }, 1500);
     } else {
+      // Task completed!
       setIsTaskActive(false);
       setIsVerifying(false);
       if (recognitionRef.current && isListening) {
         recognitionRef.current.stop();
         setIsListening(false);
       }
-      setTasks(prev => prev.map(t =>
-        t.id === selectedTask.id
-          ? { ...t, status: 'completed' as const, completedSteps: totalSteps }
-          : t
-      ));
-      setSelectedTask(prev => prev ? { ...prev, status: 'completed', completedSteps: totalSteps } : null);
+      
+      const completedAt = new Date().toISOString();
+      
+      setTasks(prev => {
+        const updatedTasks = prev.map(t =>
+          t.id === selectedTask.id
+            ? { ...t, status: 'completed' as const, completedSteps: totalSteps, completedAt, employeeId: id }
+            : t
+        );
+        
+        // Save to localStorage immediately
+        if (id) {
+          saveTasks(id, updatedTasks);
+        }
+        
+        return updatedTasks;
+      });
+      
+      setSelectedTask(prev => prev ? { ...prev, status: 'completed', completedSteps: totalSteps, completedAt } : null);
       toast.success("🎉 Task Completed Successfully!");
     }
-  }, [selectedTask, workInstructions, currentStepIndex, resetStepVerification, startStepCountdown, isListening]);
+  }, [selectedTask, workInstructions, currentStepIndex, resetStepVerification, startStepCountdown, isListening, id]);
 
   // Check if current step requirements are met and lock gesture/component on first high-confidence match
   const checkStepVerification = useCallback((gesture: string | null, gestureConfidence: number, components: Detection[]) => {
@@ -1229,12 +1291,16 @@ const Monitor = () => {
     return () => cancelAnimationFrame(animationFrameId);
   }, [isLive, detector, currentComponents, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting, isVerifying, lockedGesture, lockedComponent, isRecordingGesture, gestureRecordingComplete]);
 
-  // Load Work Instructions and build task list
+  // Load Work Instructions and build task list with persistence
   useEffect(() => {
     if (!id) return;
 
     const savedWIs = localStorage.getItem('saved_work_instructions');
     const teamsData = localStorage.getItem('teams_data');
+    
+    // Load previously saved task states for this employee
+    const savedTasks = loadSavedTasks(id);
+    const savedTaskMap = new Map(savedTasks.map(t => [t.id, t]));
 
     if (savedWIs) {
       const wis: WorkInstruction[] = JSON.parse(savedWIs);
@@ -1254,61 +1320,94 @@ const Monitor = () => {
       if (assignedWIId) {
         const assignedWI = wis.find(w => w.id === assignedWIId);
         if (assignedWI) {
+          const frequency = (assignedWI as any).frequency || 'Daily';
+          const { id: taskId, dateKey } = generateTaskId(assignedWI.id, 'routine', frequency);
+          
+          // Check if we have saved state for this task
+          const savedState = savedTaskMap.get(taskId);
+          
           taskList.push({
-            id: `task-${assignedWI.id}`,
+            id: taskId,
             wiId: assignedWI.id,
             title: assignedWI.title,
             type: 'routine',
-            frequency: (assignedWI as any).frequency || 'Daily',
+            frequency: frequency,
             dueDate: 'Today',
-            status: 'pending',
-            completedSteps: 0,
-            totalSteps: assignedWI.steps?.length || 0
+            status: savedState?.status || 'pending',
+            completedSteps: savedState?.completedSteps || 0,
+            totalSteps: assignedWI.steps?.length || 0,
+            dateKey: dateKey,
+            completedAt: savedState?.completedAt,
+            employeeId: id
           });
         }
       }
 
+      // Monthly calibration task
+      const { id: calibrationId, dateKey: calibrationDateKey } = generateTaskId('calibration', 'calibration', 'Monthly');
+      const savedCalibration = savedTaskMap.get(calibrationId);
+      
       taskList.push({
-        id: 'calibration-monthly',
+        id: calibrationId,
         wiId: '',
         title: 'Station Calibration',
         type: 'calibration',
         frequency: 'Monthly',
         dueDate: 'Nov 30, 2025',
-        status: 'pending',
-        completedSteps: 0,
-        totalSteps: 3
+        status: savedCalibration?.status || 'pending',
+        completedSteps: savedCalibration?.completedSteps || 0,
+        totalSteps: 3,
+        dateKey: calibrationDateKey,
+        completedAt: savedCalibration?.completedAt,
+        employeeId: id
       });
 
       wis.forEach(wi => {
         if (wi.id !== assignedWIId) {
+          const { id: availableId } = generateTaskId(wi.id, 'one-time', 'As Needed');
+          const savedAvailable = savedTaskMap.get(availableId);
+          
           taskList.push({
-            id: `available-${wi.id}`,
+            id: availableId,
             wiId: wi.id,
             title: wi.title,
             type: 'one-time',
             frequency: 'As Needed',
             dueDate: '-',
-            status: 'pending',
-            completedSteps: 0,
-            totalSteps: wi.steps?.length || 0
+            status: savedAvailable?.status || 'pending',
+            completedSteps: savedAvailable?.completedSteps || 0,
+            totalSteps: wi.steps?.length || 0,
+            completedAt: savedAvailable?.completedAt,
+            employeeId: id
           });
         }
       });
 
       setTasks(taskList);
+      
+      // Save the merged task list
+      saveTasks(id, taskList);
     } else {
-      setTasks([{
-        id: 'calibration-monthly',
+      const { id: calibrationId, dateKey: calibrationDateKey } = generateTaskId('calibration', 'calibration', 'Monthly');
+      const savedCalibration = savedTaskMap.get(calibrationId);
+      
+      const defaultTasks = [{
+        id: calibrationId,
         wiId: '',
         title: 'Station Calibration',
-        type: 'calibration',
+        type: 'calibration' as const,
         frequency: 'Monthly',
         dueDate: 'Nov 30, 2025',
-        status: 'pending',
-        completedSteps: 0,
-        totalSteps: 3
-      }]);
+        status: savedCalibration?.status || 'pending' as const,
+        completedSteps: savedCalibration?.completedSteps || 0,
+        totalSteps: 3,
+        dateKey: calibrationDateKey,
+        completedAt: savedCalibration?.completedAt,
+        employeeId: id
+      }];
+      
+      setTasks(defaultTasks);
+      saveTasks(id, defaultTasks);
     }
   }, [id]);
 
