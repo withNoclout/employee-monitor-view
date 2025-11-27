@@ -737,24 +737,33 @@ const Monitor = () => {
     const currentStep = getStepsForTask(selectedTask)[stepIndex];
     const requiredGestureId = currentStep?.gestureId;
     const requiredSpeechPhrase = currentStep?.speechPhrase;
+    const requiredComponentId = currentStep?.componentId;
     
     // Get required gesture info
     const requiredGesture = requiredGestureId 
       ? trainedGestures.find(g => g.id === requiredGestureId) 
       : null;
+    
+    // Get required component info
+    const requiredComponent = requiredComponentId
+      ? trainedComponents[parseInt(requiredComponentId) - 1]
+      : null;
 
     console.log('[StepVerify] Starting parallel verification...', { 
       requiredGesture: requiredGesture?.name || 'none',
       requiredSpeech: requiredSpeechPhrase || 'none',
+      requiredComponent: requiredComponent || 'none',
       stepIndex: stepIndex 
     });
 
-    // Reset speech state for this verification
+    // Reset all verification states for this step
     setSpokenText("");
     setInterimText("");
     setSpeechVerified(false);
     setLockedGesture(null);
     setGestureVerified(false);
+    setLockedComponent(null);  // Reset component lock
+    setComponentVerified(false);
     spokenTextRef.current = ""; // Reset speech ref
 
     // Use same state as Test Gesture for UI consistency
@@ -769,6 +778,10 @@ const Monitor = () => {
     let gestureResult: { gesture: string; confidence: number } | null = null;
     let gestureMatched = false;
     let speechMatched = !requiredSpeechPhrase; // If no speech required, already matched
+    let componentMatched = !requiredComponent; // If no component required, already matched
+
+    // Enable component detection during verification
+    setIsVerifying(true);
 
     try {
       // Phase 1: Countdown from 3
@@ -900,9 +913,19 @@ const Monitor = () => {
         }
       }
 
+      // Check component match - uses lockedComponent set by detection loop
+      if (requiredComponent) {
+        // lockedComponent is set by the YOLO detection loop running in background
+        componentMatched = !!lockedComponent && lockedComponent.toLowerCase() === requiredComponent.toLowerCase();
+        console.log(`[StepVerify] Component match: "${lockedComponent || 'none'}" vs "${requiredComponent}" = ${componentMatched}`);
+        if (componentMatched) {
+          setComponentVerified(true);
+        }
+      }
+
       // Count verified items for UI
-      const totalRequired = [requiredGesture, requiredSpeechPhrase].filter(Boolean).length;
-      const totalVerified = [gestureMatched && requiredGesture, speechMatched && requiredSpeechPhrase].filter(Boolean).length;
+      const totalRequired = [requiredGesture, requiredSpeechPhrase, requiredComponent].filter(Boolean).length;
+      const totalVerified = [gestureMatched && requiredGesture, speechMatched && requiredSpeechPhrase, componentMatched && requiredComponent].filter(Boolean).length;
 
       // Phase 8: Show combined result
       const gestureStatus = requiredGesture 
@@ -911,6 +934,10 @@ const Monitor = () => {
       
       const speechStatus = requiredSpeechPhrase
         ? (speechMatched ? `✅ Speech: OK` : `❌ Speech: "${capturedSpeechText || 'nothing'}"`)
+        : null;
+      
+      const componentStatus = requiredComponent
+        ? (componentMatched ? `✅ Component: ${lockedComponent}` : `❌ Component: ${lockedComponent || 'none'} (need ${requiredComponent})`)
         : null;
 
       // Build result string for display
@@ -921,13 +948,16 @@ const Monitor = () => {
       if (requiredSpeechPhrase) {
         resultParts.push(speechMatched ? '🎤✓' : '🎤✗');
       }
+      if (requiredComponent) {
+        resultParts.push(componentMatched ? '📦✓' : '📦✗');
+      }
       resultParts.push(`${totalVerified}/${totalRequired}`);
       setTestGestureResult(resultParts.join(' | ') || 'No result');
 
-      // Check if both passed
-      if (gestureMatched && speechMatched) {
+      // Check if ALL passed (gesture + speech + component)
+      if (gestureMatched && speechMatched && componentMatched) {
         // ✅ ALL PASSED!
-        const passedItems = [gestureStatus, speechStatus].filter(Boolean).join('\n');
+        const passedItems = [gestureStatus, speechStatus, componentStatus].filter(Boolean).join('\n');
         toast.success(`✅ STEP PASSED!\n${passedItems}`, { duration: 2500 });
         setTimeout(() => {
           setTestGestureResult(null);
@@ -935,7 +965,7 @@ const Monitor = () => {
         }, 1500);
       } else {
         // ❌ Something failed
-        const failedItems = [gestureStatus, speechStatus].filter(Boolean).join('\n');
+        const failedItems = [gestureStatus, speechStatus, componentStatus].filter(Boolean).join('\n');
         toast.error(`❌ STEP FAILED\n${failedItems}`, { duration: 4000 });
         setTimeout(() => setTestGestureResult(null), 3000);
       }
@@ -954,6 +984,7 @@ const Monitor = () => {
       }
     } finally {
       setIsTestingGesture(false);
+      setIsVerifying(false);  // Stop component detection
       setTestGestureCountdown(null);
       setTestMessage(null);
       testGestureFramesRef.current = [];
