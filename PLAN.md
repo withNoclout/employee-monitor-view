@@ -493,27 +493,75 @@ isClassifyingGestureRef.current = false;
 
 ---
 
-## Next Steps (Priority Order)
+## Session: November 27, 2025 - Verification Flow Issues
 
-### 1. 🔴 Verify Gesture Accuracy
-- Test with real gestures: thumbs_up, good_job, etc.
-- Ensure DTW classification returns correct gesture
-- May need to retrain gestures if templates are stale
+### Problem Summary
+The step verification flow is not working reliably:
+- Test Gesture button works correctly (detects gesture, shows result)
+- But Start Step Verification often fails even when gesture is correct
+- Shows "STEP FAILED" at timeout even when gesture was detected and matched
+- Complex state management making debugging difficult
+
+### What Works ✅
+1. **Test Gesture Button** - Records 3s, classifies via DTW, shows result
+2. **DTW Classification** - Server responds correctly (~20ms)
+3. **Hand Detection** - MediaPipe detects hands reliably
+4. **Speech Recognition** - Web Speech API works, verifies correctly
+
+### What's Broken ❌
+1. **Step Verification** - Doesn't reliably complete when gesture matches
+2. **State Synchronization** - `lockedGesture` not being set properly in all code paths
+3. **Timeout Logic** - Shows "FAILED" even when gesture was detected
+
+### Attempted Fixes (Nov 27)
+1. Added `softResetVerification()` to keep verified items on retry
+2. Added auto-verify `useEffect` that watches `currentGesture`
+3. Simplified `performGestureVerification()` to match Test Gesture logic
+4. Removed "Hold still" complexity
+
+### Current Status
+- Code committed but verification still unreliable
+- May need to **redesign the verification flow from scratch**
+
+### Root Cause Analysis
+The verification system has grown too complex with multiple overlapping mechanisms:
+- `checkStepVerification()` - old callback-based approach
+- `performGestureVerification()` - async recording approach
+- Auto-verify `useEffect` - watches `currentGesture`
+- Timeout `useEffect` - checks `lockedGesture`
+
+These don't coordinate well together, leading to race conditions and missed state updates.
+
+### Recommendation: Simplify Architecture
+**Option A: Single Source of Truth**
+- Use ONLY the Test Gesture approach for verification
+- Remove `checkStepVerification()` callback
+- Remove complex timeout logic
+- Just: Record → Classify → Match → Pass/Fail
+
+**Option B: Complete Redesign**
+- Start fresh with a simpler state machine
+- States: IDLE → COUNTDOWN → RECORDING → CLASSIFYING → RESULT
+- Single function handles all transitions
+- Clear success/failure paths
+
+---
+
+## Next Steps (Updated Priority)
+
+### 1. 🔴 **REDESIGN Verification Flow** (CRITICAL)
+- Choose Option A or B above
+- Implement clean state machine
+- Test thoroughly before adding features
 
 ### 2. 🟡 Component Detection Integration
-- Connect YOLO detection during verification
-- Lock component on first high-confidence detection
-- Show detected component in requirements panel
+- After verification is stable
 
 ### 3. 🟢 Database Integration
-- Move from localStorage to real database
-- Persist Work Instructions, Teams, Training data
-- Consider SQLite for simplicity or PostgreSQL for production
+- After core features work
 
 ### 4. 🔵 Reporting
-- Export verification reports
-- Track pass/fail rates per employee
-- Time-to-complete metrics
+- After data persistence
 
 ---
 
@@ -538,5 +586,6 @@ node server.js   # Backend (port 3000)
 - `src/pages/Training.tsx` - Gesture training UI
 - `gesture_workflow/scripts/dtw_gesture.py` - DTW classifier
 - `server.js` - Backend API
+
 
 
