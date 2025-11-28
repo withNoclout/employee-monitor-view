@@ -13,8 +13,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = 3000;
 
-// Python interpreter path (from venv)
-const PYTHON_PATH = '/home/noclout/Vision_sign/QC_hackaton/server/venv/bin/python';
+// Python interpreter path (project venv)
+const PYTHON_PATH = '/home/noclout/employee-monitor-view/venv/bin/python3';
 const TRAIN_SCRIPT = path.join(__dirname, 'yolo_workflow', 'scripts', 'train_model.py');
 const GESTURE_TRAIN_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
 
@@ -270,9 +270,14 @@ app.post('/api/detect', express.json({ limit: '10mb' }), async (req, res) => {
                 
                 if (code === 0) {
                     try {
-                        resolve(JSON.parse(output));
+                        // Try to parse just the last line (in case of warnings)
+                        const lines = output.trim().split('\n');
+                        const jsonLine = lines[lines.length - 1];
+                        resolve(JSON.parse(jsonLine));
                     } catch(e) {
-                        reject(new Error('Failed to parse detection output'));
+                        console.error('Parse error. Raw output:', output);
+                        console.error('Stderr:', error);
+                        reject(new Error('Failed to parse detection output: ' + output.substring(0, 200)));
                     }
                 } else {
                     reject(new Error(error || 'Detection failed'));
