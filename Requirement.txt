@@ -1,0 +1,9 @@
+ultralytics
+tqdm
+opencv-python
+numpy
+pillow
+flask
+scipy
+matplotlib
+requests

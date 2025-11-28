@@ -9,6 +9,7 @@ import Training from "./pages/Training";
 import BuildWI from "./pages/BuildWI";
 import ManageTeam from "./pages/ManageTeam";
 import TrainModel from "./pages/TrainModel";
+import Annotate from "./pages/Annotate";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/build-wi" element={<BuildWI />} />
           <Route path="/manage-team" element={<ManageTeam />} />
           <Route path="/train-model" element={<TrainModel />} />
+          <Route path="/annotate" element={<Annotate />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

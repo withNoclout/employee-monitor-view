@@ -76,7 +76,7 @@ interface TrackedDetection {
 
 const VOTE_THRESHOLD = 4; // Need 4 detections to confirm
 const VOTE_DECAY_MS = 1000; // Lose votes after 1 second without detection
-const VOTE_MIN_CONFIDENCE = 0.10; // Minimum confidence to count as a vote
+const VOTE_MIN_CONFIDENCE = 0.35; // Minimum confidence to count as a vote (raised to reduce false positives)
 
 // Helper functions for task persistence
 const getTodayKey = () => new Date().toISOString().split('T')[0]; // "2025-11-27"
@@ -206,6 +206,7 @@ const Monitor = () => {
   // Test Component State
   const [isTestingComponent, setIsTestingComponent] = useState(false);
   const [testComponentResult, setTestComponentResult] = useState<string | null>(null);
+  const [isComponentDetectionActive, setIsComponentDetectionActive] = useState(false); // Only detect when button clicked or verifying step
 
   // Confidence threshold for locking gesture/component
   const LOCK_CONFIDENCE = 0.5; // 50% confidence to lock in (same as DTW threshold)
@@ -689,26 +690,41 @@ const Monitor = () => {
       .trim();
   };
 
-  // Test Component function - single snapshot detection
+  // Focus area dimensions (center rectangle where user should place object)
+  const FOCUS_AREA = {
+    // 50% of video in center
+    widthRatio: 0.5,
+    heightRatio: 0.5,
+  };
+
+  // Test Component function - single snapshot detection from focus area
   const startTestComponent = async () => {
     if (isTestingComponent || !videoRef.current) return;
 
     setIsTestingComponent(true);
+    setIsComponentDetectionActive(true); // Enable detection mode
     setTestComponentResult(null);
+    setTrackedDetections(new Map()); // Reset vote tracking
 
     try {
       const video = videoRef.current;
       
-      // Create canvas to capture frame
+      // Calculate focus area (center rectangle)
+      const focusWidth = Math.floor(video.videoWidth * FOCUS_AREA.widthRatio);
+      const focusHeight = Math.floor(video.videoHeight * FOCUS_AREA.heightRatio);
+      const focusX = Math.floor((video.videoWidth - focusWidth) / 2);
+      const focusY = Math.floor((video.videoHeight - focusHeight) / 2);
+      
+      // Create canvas to capture ONLY the focus area
       const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = video.videoWidth;
-      tempCanvas.height = video.videoHeight;
+      tempCanvas.width = focusWidth;
+      tempCanvas.height = focusHeight;
       const tempCtx = tempCanvas.getContext('2d');
       
       if (!tempCtx) throw new Error("Could not create canvas context");
 
-      // Capture current frame
-      tempCtx.drawImage(video, 0, 0);
+      // Capture only the focus area (center rectangle)
+      tempCtx.drawImage(video, focusX, focusY, focusWidth, focusHeight, 0, 0, focusWidth, focusHeight);
       const base64 = tempCanvas.toDataURL('image/jpeg', 0.8);
 
       toast.info("Detecting components...");
@@ -728,25 +744,51 @@ const Monitor = () => {
       console.log('[TestComponent] Detection result:', result);
 
       if (result.detections && result.detections.length > 0) {
-        // Show all detected components
+        // Show all detected components in focus area
         const detected = result.detections
           .map((d: any) => `${d.class} (${(d.confidence * 100).toFixed(0)}%)`)
           .join(', ');
         setTestComponentResult(detected);
-        toast.success(`Found: ${detected}`);
+        toast.success(`Found in focus area: ${detected}`);
+        
+        // Store detections with adjusted coordinates (relative to full frame)
+        const video = videoRef.current!;
+        const focusWidth = Math.floor(video.videoWidth * FOCUS_AREA.widthRatio);
+        const focusHeight = Math.floor(video.videoHeight * FOCUS_AREA.heightRatio);
+        const focusX = Math.floor((video.videoWidth - focusWidth) / 2);
+        const focusY = Math.floor((video.videoHeight - focusHeight) / 2);
+        
+        const adjustedDetections = result.detections.map((det: any) => ({
+          ...det,
+          bbox: {
+            x1: (det.bbox.x1 * focusWidth + focusX) / video.videoWidth,
+            y1: (det.bbox.y1 * focusHeight + focusY) / video.videoHeight,
+            x2: (det.bbox.x2 * focusWidth + focusX) / video.videoWidth,
+            y2: (det.bbox.y2 * focusHeight + focusY) / video.videoHeight,
+          }
+        }));
+        setCurrentComponents(adjustedDetections);
       } else {
-        setTestComponentResult("No components detected");
-        toast.warning("No components detected in frame");
+        setTestComponentResult("No components in focus area");
+        toast.warning("Place object inside the rectangle and try again");
+        setCurrentComponents([]);
       }
 
-      // Auto-dismiss after 4 seconds
-      setTimeout(() => setTestComponentResult(null), 4000);
+      // Auto-dismiss after 4 seconds and disable detection mode
+      setTimeout(() => {
+        setTestComponentResult(null);
+        setIsComponentDetectionActive(false);
+        setCurrentComponents([]);
+      }, 4000);
 
     } catch (err: any) {
       console.error('[TestComponent] Error:', err);
       setTestComponentResult(`Error: ${err.message}`);
       toast.error(err.message);
-      setTimeout(() => setTestComponentResult(null), 3000);
+      setTimeout(() => {
+        setTestComponentResult(null);
+        setIsComponentDetectionActive(false);
+      }, 3000);
     } finally {
       setIsTestingComponent(false);
     }
@@ -1267,36 +1309,75 @@ const Monitor = () => {
           // Keep showing locked gesture or last DTW result
         }
 
-        // Component Detection (throttled + ROI optimization) - SKIP if component already locked
-        const shouldDetectComponent = !lockedComponent && isVerifying;
+        // === DRAW FOCUS RECTANGLE GUIDE (always visible) ===
+        const focusWidth = Math.floor(video.videoWidth * FOCUS_AREA.widthRatio);
+        const focusHeight = Math.floor(video.videoHeight * FOCUS_AREA.heightRatio);
+        const focusX = Math.floor((video.videoWidth - focusWidth) / 2);
+        const focusY = Math.floor((video.videoHeight - focusHeight) / 2);
 
-        if (!lockedComponent && !isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
+        // Draw dashed rectangle guide
+        ctx.strokeStyle = isComponentDetectionActive ? '#22c55e' : 'rgba(255, 255, 255, 0.6)'; // Green when active, white otherwise
+        ctx.lineWidth = isComponentDetectionActive ? 3 : 2;
+        ctx.setLineDash([10, 10]);
+        ctx.strokeRect(focusX, focusY, focusWidth, focusHeight);
+        ctx.setLineDash([]);
+
+        // Draw corner brackets for better visibility
+        const bracketSize = 20;
+        ctx.strokeStyle = isComponentDetectionActive ? '#22c55e' : 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 3;
+        // Top-left
+        ctx.beginPath();
+        ctx.moveTo(focusX, focusY + bracketSize);
+        ctx.lineTo(focusX, focusY);
+        ctx.lineTo(focusX + bracketSize, focusY);
+        ctx.stroke();
+        // Top-right
+        ctx.beginPath();
+        ctx.moveTo(focusX + focusWidth - bracketSize, focusY);
+        ctx.lineTo(focusX + focusWidth, focusY);
+        ctx.lineTo(focusX + focusWidth, focusY + bracketSize);
+        ctx.stroke();
+        // Bottom-left
+        ctx.beginPath();
+        ctx.moveTo(focusX, focusY + focusHeight - bracketSize);
+        ctx.lineTo(focusX, focusY + focusHeight);
+        ctx.lineTo(focusX + bracketSize, focusY + focusHeight);
+        ctx.stroke();
+        // Bottom-right
+        ctx.beginPath();
+        ctx.moveTo(focusX + focusWidth - bracketSize, focusY + focusHeight);
+        ctx.lineTo(focusX + focusWidth, focusY + focusHeight);
+        ctx.lineTo(focusX + focusWidth, focusY + focusHeight - bracketSize);
+        ctx.stroke();
+
+        // Draw label above rectangle
+        if (!isComponentDetectionActive) {
+          ctx.font = '14px Arial';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.textAlign = 'center';
+          ctx.fillText('Place object here', focusX + focusWidth / 2, focusY - 10);
+          ctx.textAlign = 'left';
+        }
+
+        // Component Detection - ONLY run when explicitly testing or verifying step with component requirement
+        const stepRequiresComponent = isVerifying && !lockedComponent && 
+          selectedTask && getStepsForTask(selectedTask)[currentStepIndex]?.componentId;
+        const shouldDetectComponent = (isComponentDetectionActive || stepRequiresComponent) && !lockedComponent;
+
+        if (shouldDetectComponent && !isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
           lastDetectionTime.current = now;
           setIsDetecting(true);
 
-          // Calculate ROI - center cross pattern (areas 2,4,5,6,8)
-          // This is effectively the middle 2/3 width and 2/3 height
-          const roiX = Math.floor(video.videoWidth / 6);  // Start at 1/6 from left
-          const roiY = Math.floor(video.videoHeight / 6); // Start at 1/6 from top
-          const roiWidth = Math.floor(video.videoWidth * 2 / 3);  // 2/3 of width
-          const roiHeight = Math.floor(video.videoHeight * 2 / 3); // 2/3 of height
-
           const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = roiWidth;
-          tempCanvas.height = roiHeight;
+          tempCanvas.width = focusWidth;
+          tempCanvas.height = focusHeight;
           const tempCtx = tempCanvas.getContext('2d');
 
           if (tempCtx) {
-            // Draw only the ROI region
-            tempCtx.drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
-            const base64 = tempCanvas.toDataURL('image/jpeg', 0.7); // Slightly lower quality for speed
-
-            // Draw ROI indicator on main canvas (subtle)
-            ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([5, 5]);
-            ctx.strokeRect(roiX, roiY, roiWidth, roiHeight);
-            ctx.setLineDash([]);
+            // Draw only the focus area region
+            tempCtx.drawImage(video, focusX, focusY, focusWidth, focusHeight, 0, 0, focusWidth, focusHeight);
+            const base64 = tempCanvas.toDataURL('image/jpeg', 0.7);
 
             try {
               const response = await fetch('http://localhost:3000/api/detect', {
@@ -1309,15 +1390,15 @@ const Monitor = () => {
                 const result = await response.json();
                 console.log('YOLO Detection result:', result);
                 if (result.detections) {
-                  // Adjust bbox coordinates from ROI to full frame
+                  // Adjust bbox coordinates from focus area to full frame
                   const adjustedDetections = result.detections.map((det: Detection) => ({
                     ...det,
                     bbox: {
-                      // Convert ROI-relative coords to full-frame coords
-                      x1: (det.bbox.x1 * roiWidth + roiX) / video.videoWidth,
-                      y1: (det.bbox.y1 * roiHeight + roiY) / video.videoHeight,
-                      x2: (det.bbox.x2 * roiWidth + roiX) / video.videoWidth,
-                      y2: (det.bbox.y2 * roiHeight + roiY) / video.videoHeight,
+                      // Convert focus-relative coords to full-frame coords
+                      x1: (det.bbox.x1 * focusWidth + focusX) / video.videoWidth,
+                      y1: (det.bbox.y1 * focusHeight + focusY) / video.videoHeight,
+                      x2: (det.bbox.x2 * focusWidth + focusX) / video.videoWidth,
+                      y2: (det.bbox.y2 * focusHeight + focusY) / video.videoHeight,
                     }
                   }));
                   setCurrentComponents(adjustedDetections);
@@ -1508,7 +1589,7 @@ const Monitor = () => {
 
     detect();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isLive, detector, currentComponents, trackedDetections, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting, isVerifying, lockedGesture, lockedComponent, isRecordingGesture, gestureRecordingComplete]);
+  }, [isLive, detector, currentComponents, trackedDetections, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting, isVerifying, lockedGesture, lockedComponent, isRecordingGesture, gestureRecordingComplete, isComponentDetectionActive, getStepsForTask]);
 
   // Load Work Instructions and build task list with persistence
   useEffect(() => {

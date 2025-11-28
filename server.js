@@ -195,6 +195,53 @@ app.get('/api/classes', (req, res) => {
     }
 });
 
+// Save single annotation from Annotate page
+app.post('/api/yolo/save-annotation', (req, res) => {
+    try {
+        const { image, annotations } = req.body;
+        
+        if (!image || !annotations || annotations.length === 0) {
+            return res.status(400).json({ error: 'Image and annotations required' });
+        }
+
+        // Create a new batch folder for this annotation
+        const timestamp = Date.now();
+        const batchName = `annotate_${timestamp}`;
+        const batchDir = path.join(RAW_DATA_DIR, batchName);
+        const imagesDir = path.join(batchDir, 'images');
+        const labelsDir = path.join(batchDir, 'labels');
+
+        fs.mkdirSync(imagesDir, { recursive: true });
+        fs.mkdirSync(labelsDir, { recursive: true });
+
+        // Save image
+        const imageName = `capture_${timestamp}.jpg`;
+        const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+        fs.writeFileSync(path.join(imagesDir, imageName), base64Data, 'base64');
+
+        // Save label in YOLO format
+        const labelName = `capture_${timestamp}.txt`;
+        const labelContent = annotations.map(ann => {
+            // YOLO format: class_id center_x center_y width height (all normalized 0-1)
+            return `${ann.classId} ${ann.x.toFixed(6)} ${ann.y.toFixed(6)} ${ann.width.toFixed(6)} ${ann.height.toFixed(6)}`;
+        }).join('\n');
+        
+        fs.writeFileSync(path.join(labelsDir, labelName), labelContent);
+
+        console.log(`[Annotate] Saved: ${imageName} with ${annotations.length} annotation(s)`);
+        
+        res.json({ 
+            success: true, 
+            message: `Saved to ${batchName}`,
+            imagePath: path.join(imagesDir, imageName),
+            labelPath: path.join(labelsDir, labelName)
+        });
+    } catch (error) {
+        console.error('[Annotate] Error saving:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/train', (req, res) => {
     console.log('Starting training process...');
     
