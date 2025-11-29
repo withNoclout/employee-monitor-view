@@ -16,7 +16,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import LossGraph from "@/components/LossGraph";
-import { motion, AnimatePresence } from "framer-motion";
 
 interface ClassInfo {
   id: string;
@@ -1371,91 +1370,56 @@ const Training = () => {
           )}
 
           {/* Stats */}
-          <motion.div 
-            className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8"
-            initial="hidden"
-            animate="visible"
-            variants={{
-              visible: {
-                transition: {
-                  staggerChildren: 0.1
-                }
-              }
-            }}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="border-border/50 shadow-industrial">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
-                    <ImageIcon className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Total Images</p>
-                    <p className="text-2xl font-bold tracking-tight tabular-nums">
-                      {classes.reduce((acc, curr) => acc + curr.count, 0)}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="border-border/50 shadow-industrial">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
-                    <Tag className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Classes</p>
-                    <p className="text-2xl font-bold tracking-tight tabular-nums">{classes.length}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="border-border/50 shadow-industrial">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
-                    <Database className="w-5 h-5 text-success" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Trained Classes</p>
-                    <p className="text-2xl font-bold tracking-tight tabular-nums">
-                      {classes.filter(c => c.isTrained).length}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="border-border/50 shadow-industrial">
-                <CardContent className="p-6 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
-                    <Play className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Training Status</p>
-                    <p className="text-2xl font-bold tracking-tight tabular-nums">{isTraining ? "Running" : "Idle"}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </motion.div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <Card className="border-border/50 shadow-industrial">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                  <ImageIcon className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Total Images</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">
+                    {classes.reduce((acc, curr) => acc + curr.count, 0)}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50 shadow-industrial">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                  <Tag className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Classes</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">{classes.length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50 shadow-industrial">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                  <Database className="w-5 h-5 text-success" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Trained Classes</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">
+                    {classes.filter(c => c.isTrained).length}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50 shadow-industrial">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                  <Play className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Training Status</p>
+                  <p className="text-2xl font-bold tracking-tight">{isTraining ? "Running" : "Idle"}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
           {/* Main Content */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1676,55 +1640,35 @@ const Training = () => {
                     </div>
                     
                     <div className="space-y-3 flex-1 overflow-auto max-h-[300px] pr-2">
-                      <AnimatePresence mode="popLayout">
-                        {classes.map((cls, index) => (
-                          <motion.div
-                            key={cls.id}
-                            layout
-                            initial={{ opacity: 0, scale: 0.9, x: -10 }}
-                            animate={{ opacity: 1, scale: 1, x: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, x: 10 }}
-                            transition={{ 
-                              duration: 0.2,
-                              delay: index * 0.05
-                            }}
-                          >
-                            <div className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors group">
-                              <div className="flex items-center gap-3">
-                                <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
-                                <div>
-                                  <p className="font-medium text-sm">{cls.name}</p>
-                                  <p className="text-xs text-muted-foreground">{cls.count} samples</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <motion.div
-                                  initial={{ opacity: 0, scale: 0.9 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  transition={{ duration: 0.2 }}
-                                >
-                                  <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[10px]">
-                                    {cls.isTrained ? "Trained" : "New"}
-                                  </Badge>
-                                </motion.div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => toggleClassTraining(cls.id, false)}
-                                  title={cls.includeInTraining ? "Exclude from training" : "Include in training"}
-                                >
-                                  {cls.includeInTraining ? (
-                                    <Eye className="w-4 h-4 text-primary" />
-                                  ) : (
-                                    <EyeOff className="w-4 h-4 text-muted-foreground" />
-                                  )}
-                                </Button>
-                              </div>
+                      {classes.map((cls) => (
+                        <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors group">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
+                            <div>
+                              <p className="font-medium text-sm">{cls.name}</p>
+                              <p className="text-xs text-muted-foreground">{cls.count} samples</p>
                             </div>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[10px]">
+                              {cls.isTrained ? "Trained" : "New"}
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => toggleClassTraining(cls.id, false)}
+                              title={cls.includeInTraining ? "Exclude from training" : "Include in training"}
+                            >
+                              {cls.includeInTraining ? (
+                                <Eye className="w-4 h-4 text-primary" />
+                              ) : (
+                                <EyeOff className="w-4 h-4 text-muted-foreground" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
 
                     <div className="pt-4 border-t border-border mt-auto">
@@ -1773,62 +1717,37 @@ const Training = () => {
                       </div>
                     ) : (
                       <div className="space-y-3 flex-1 overflow-auto max-h-[300px] pr-2">
-                        <AnimatePresence mode="popLayout">
-                          {gestureClasses.map((cls, index) => (
-                            <motion.div
-                              key={cls.id}
-                              layout
-                              initial={{ opacity: 0, scale: 0.9, x: -10 }}
-                              animate={{ opacity: 1, scale: 1, x: 0 }}
-                              exit={{ opacity: 0, scale: 0.9, x: 10 }}
-                              transition={{ 
-                                duration: 0.2,
-                                delay: index * 0.05
-                              }}
-                            >
-                              <div 
-                                className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${
-                                  selectedGestureClass === cls.name 
-                                    ? 'border-primary bg-primary/5' 
-                                    : 'border-border hover:bg-muted/50'
-                                }`}
-                                onClick={() => setSelectedGestureClass(cls.name)}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
-                                  <div>
-                                    <p className="font-medium text-sm">{cls.displayName || cls.name}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {cls.sequenceCount} sequences • {cls.totalFrames} frames
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <motion.div
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    transition={{ duration: 0.2 }}
-                                  >
-                                    <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[10px]">
-                                      {cls.isTrained ? "Trained" : "New"}
-                                    </Badge>
-                                  </motion.div>
-                                  {cls.sequenceCount < 5 && (
-                                    <motion.div
-                                      initial={{ opacity: 0, scale: 0.9 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      transition={{ duration: 0.2, delay: 0.1 }}
-                                    >
-                                      <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                                        Need {5 - cls.sequenceCount} more
-                                      </Badge>
-                                    </motion.div>
-                                  )}
-                                </div>
+                        {gestureClasses.map((cls) => (
+                          <div 
+                            key={cls.id} 
+                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${
+                              selectedGestureClass === cls.name 
+                                ? 'border-primary bg-primary/5' 
+                                : 'border-border hover:bg-muted/50'
+                            }`}
+                            onClick={() => setSelectedGestureClass(cls.name)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
+                              <div>
+                                <p className="font-medium text-sm">{cls.displayName || cls.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {cls.sequenceCount} sequences • {cls.totalFrames} frames
+                                </p>
                               </div>
-                            </motion.div>
-                          ))}
-                        </AnimatePresence>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[10px]">
+                                {cls.isTrained ? "Trained" : "New"}
+                              </Badge>
+                              {cls.sequenceCount < 5 && (
+                                <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                                  Need {5 - cls.sequenceCount} more
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
 
