@@ -26,8 +26,15 @@ const LossGraph: React.FC<LossGraphProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    const width = canvas.width;
-    const height = canvas.height;
+    // Fix blurriness by scaling for devicePixelRatio
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    
+    const width = rect.width;
+    const height = rect.height;
     const padding = { top: 25, right: 15, bottom: 35, left: 45 };
     const graphWidth = width - padding.left - padding.right;
     const graphHeight = height - padding.top - padding.bottom;
@@ -104,7 +111,9 @@ const LossGraph: React.FC<LossGraphProps> = ({
       
       ctx.beginPath();
       lossHistory.forEach((loss, index) => {
-        const x = padding.left + (graphWidth / Math.max(lossHistory.length - 1, 1)) * index;
+        // Clamp x to stay within graph boundaries
+        const xRatio = lossHistory.length > 1 ? index / (lossHistory.length - 1) : 0;
+        const x = padding.left + (graphWidth * Math.min(1, Math.max(0, xRatio)));
         const normalizedLoss = (loss - minLoss) / lossRange;
         const y = padding.top + graphHeight * (1 - normalizedLoss);
         
@@ -116,7 +125,8 @@ const LossGraph: React.FC<LossGraphProps> = ({
       // Draw current point (last) with primary color
       if (lossHistory.length > 0) {
         const lastLoss = lossHistory[lossHistory.length - 1];
-        const x = padding.left + graphWidth * ((lossHistory.length - 1) / Math.max(lossHistory.length - 1, 1));
+        const xRatio = lossHistory.length > 1 ? 1 : 0;
+        const x = padding.left + (graphWidth * xRatio);
         const normalizedLoss = (lastLoss - minLoss) / lossRange;
         const y = padding.top + graphHeight * (1 - normalizedLoss);
         
@@ -144,7 +154,8 @@ const LossGraph: React.FC<LossGraphProps> = ({
       ctx.textAlign = 'center';
       const step = Math.max(1, Math.ceil(lossHistory.length / 5));
       for (let i = 0; i < lossHistory.length; i += step) {
-        const x = padding.left + (graphWidth / Math.max(lossHistory.length - 1, 1)) * i;
+        const xRatio = lossHistory.length > 1 ? i / (lossHistory.length - 1) : 0;
+        const x = padding.left + (graphWidth * Math.min(1, Math.max(0, xRatio)));
         ctx.fillText((i + 1).toString(), x, height - padding.bottom + 12);
       }
       if (lossHistory.length > 1) {
@@ -167,8 +178,15 @@ const LossGraph: React.FC<LossGraphProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    const width = canvas.width;
-    const height = canvas.height;
+    // Fix blurriness by scaling for devicePixelRatio
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    
+    const width = rect.width;
+    const height = rect.height;
     const padding = { top: 25, right: 15, bottom: 35, left: 45 };
     const graphWidth = width - padding.left - padding.right;
     const graphHeight = height - padding.top - padding.bottom;
@@ -253,12 +271,13 @@ const LossGraph: React.FC<LossGraphProps> = ({
         ctx.setLineDash([5, 5]);
         ctx.beginPath();
         ctx.moveTo(padding.left, height - padding.bottom);
-        ctx.lineTo(padding.left + graphWidth * (progress / 100), padding.top);
+        const progressRatioForLine = Math.min(1, Math.max(0, progress / 100));
+        ctx.lineTo(padding.left + graphWidth * progressRatioForLine, padding.top);
         ctx.stroke();
         ctx.setLineDash([]);
         
         // Draw current progress vertical marker
-        const progressX = padding.left + graphWidth * (progress / 100);
+        const progressX = padding.left + graphWidth * progressRatioForLine;
         ctx.strokeStyle = `hsl(${successColor} / 0.5)`;
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -279,7 +298,9 @@ const LossGraph: React.FC<LossGraphProps> = ({
         
         ctx.beginPath();
         avgLosses.forEach((point, index) => {
-          const x = padding.left + (graphWidth * point.progress / 100);
+          // Clamp x to stay within graph boundaries
+          const progressRatio = Math.min(1, Math.max(0, point.progress / 100));
+          const x = padding.left + (graphWidth * progressRatio);
           const normalizedLoss = (point.avgLoss - minAvg) / range;
           const y = padding.top + graphHeight * (1 - normalizedLoss);
           
@@ -290,7 +311,8 @@ const LossGraph: React.FC<LossGraphProps> = ({
         
         // Draw current point with primary color (reuse variable)
         const lastPoint = avgLosses[avgLosses.length - 1];
-        const x = padding.left + (graphWidth * lastPoint.progress / 100);
+        const progressRatio = Math.min(1, Math.max(0, lastPoint.progress / 100));
+        const x = padding.left + (graphWidth * progressRatio);
         const normalizedLoss = (lastPoint.avgLoss - minAvg) / range;
         const y = padding.top + graphHeight * (1 - normalizedLoss);
         
@@ -478,16 +500,15 @@ const LossGraph: React.FC<LossGraphProps> = ({
         <div style={{
           background: 'hsl(var(--muted) / 0.2)',
           borderRadius: '6px',
+          position: 'relative',
           padding: '10px',
           border: '1px solid hsl(var(--border) / 0.3)'
         }}>
           <canvas
             ref={epochCanvasRef}
-            width={280}
-            height={180}
             style={{
               width: '100%',
-              height: 'auto',
+              height: '180px',
               borderRadius: '4px'
             }}
           />
@@ -502,11 +523,9 @@ const LossGraph: React.FC<LossGraphProps> = ({
         }}>
           <canvas
             ref={progressCanvasRef}
-            width={280}
-            height={180}
             style={{
               width: '100%',
-              height: 'auto',
+              height: '180px',
               borderRadius: '4px'
             }}
           />
