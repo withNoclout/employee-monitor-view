@@ -179,24 +179,24 @@ const ManageTeam = () => {
               Create New Team
             </Button>
           </DialogTrigger>
-          <DialogContent className="shadow-industrial-lg border-border">
+          <DialogContent className="shadow-industrial-lg border-border/40">
             <DialogHeader>
-              <DialogTitle>Create New Team</DialogTitle>
-              <DialogDescription>Add a new team to your organization.</DialogDescription>
+              <DialogTitle className="tracking-tight">Create New Team</DialogTitle>
+              <DialogDescription className="text-[11px]">Add a new team to your organization.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="name">Team Name</Label>
+                <Label htmlFor="name" className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Team Name</Label>
                 <Input
                   id="name"
                   value={newTeamName}
                   onChange={(e) => setNewTeamName(e.target.value)}
                   placeholder="e.g., Maintenance Crew"
-                  className="border-border"
+                  className="border-border/40 h-9"
                 />
               </div>
             </div>
-            <Button onClick={createTeam} className="w-full cursor-pointer">Create Team</Button>
+            <Button onClick={createTeam} className="w-full cursor-pointer h-9 text-sm">Create Team</Button>
           </DialogContent>
         </Dialog>
       </div>
@@ -229,17 +229,19 @@ const ManageTeam = () => {
                   scale: { duration: 0.3 }
                 }}
               >
-                <Card className="border-border shadow-industrial-lg hover:shadow-glow transition-all duration-300 overflow-hidden group h-full">
-              <div className="gradient-industrial absolute inset-0 opacity-5" />
+                <Card className="border-border/50 shadow-industrial hover:shadow-glow transition-all duration-300 overflow-hidden group h-full">
+              {/* Subtle accent border */}
+              <div className="h-[2px] bg-gradient-to-r from-primary/30 via-primary/50 to-primary/30" />
+              
               <CardHeader className="pb-4 relative z-10">
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-primary/10 rounded-lg border border-primary/20 shadow-glow">
-                      <Users className="w-6 h-6 text-primary" />
+                    <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-industrial group-hover:border-primary/50 group-hover:bg-primary/5 transition-all duration-300">
+                      <Users className="w-5 h-5 text-primary" />
                     </div>
                     <div>
-                      <CardTitle className="text-lg">{team.name}</CardTitle>
-                      <CardDescription className="flex items-center gap-1.5">
+                      <CardTitle className="text-lg tracking-tight">{team.name}</CardTitle>
+                      <CardDescription className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums">
                         <Users className="w-3 h-3" />
                         {team.memberIds.length} Members
                       </CardDescription>
@@ -251,18 +253,18 @@ const ManageTeam = () => {
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <Badge variant={status.variant} className={`${status.className} shadow-industrial`}>
+                    <Badge variant={status.variant} className={`${status.className} shadow-sm font-semibold text-[10px] uppercase tracking-wider px-2`}>
                       {status.label}
                     </Badge>
                   </motion.div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-5 relative z-10">
+              <CardContent className="space-y-4 relative z-10">
                 {/* Members Section */}
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <Users className="w-4 h-4 text-primary" />
+                    <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-primary" />
                       Team Members
                     </label>
                     <Dialog>
@@ -271,13 +273,13 @@ const ManageTeam = () => {
                           <UserPlus className="w-4 h-4" />
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="shadow-industrial-lg border-border max-h-[80vh]">
+                      <DialogContent className="shadow-industrial-lg border-border/40 max-h-[80vh]">
                         <DialogHeader>
-                          <DialogTitle className="flex items-center gap-2">
+                          <DialogTitle className="flex items-center gap-2 tracking-tight">
                             <UserPlus className="w-5 h-5 text-primary" />
                             Add Member to {team.name}
                           </DialogTitle>
-                          <DialogDescription>Select an employee to add to this team.</DialogDescription>
+                          <DialogDescription className="text-[11px]">Select an employee to add to this team.</DialogDescription>
                         </DialogHeader>
                         <ScrollArea className="max-h-[60vh]">
                           <div className="space-y-2 mt-4 pr-4">
@@ -286,27 +288,27 @@ const ManageTeam = () => {
                               const assignedTeam = teams.find(t => t.memberIds.includes(emp.id));
 
                               return (
-                                <div key={emp.id} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors shadow-industrial">
-                                  <div>
-                                    <p className="font-medium text-sm">{emp.name}</p>
-                                    <p className="text-xs text-muted-foreground">{emp.position}</p>
-                                  </div>
-                                  {isInTeam ? (
-                                    <Badge variant="secondary" className="shadow-industrial">Current</Badge>
-                                   ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="shadow-industrial cursor-pointer"
-                                      onClick={() => {
-                                        addMember(team.id, emp.id);
-                                        toast.success(`Added ${emp.name} to ${team.name}`);
-                                      }}
-                                    >
-                                      Add
-                                    </Button>
-                                   )}
-                                </div>
+                                 <div key={emp.id} className="flex items-center justify-between p-3 rounded-md border border-border/40 hover:bg-muted/30 transition-colors shadow-sm glass-effect">
+                                   <div>
+                                     <p className="font-semibold text-sm tracking-tight">{emp.name}</p>
+                                     <p className="text-[11px] text-muted-foreground font-medium">{emp.position}</p>
+                                   </div>
+                                   {isInTeam ? (
+                                     <Badge variant="secondary" className="shadow-sm text-[10px] uppercase tracking-wider">Current</Badge>
+                                    ) : (
+                                     <Button
+                                       size="sm"
+                                       variant="outline"
+                                       className="shadow-sm cursor-pointer text-xs h-7"
+                                       onClick={() => {
+                                         addMember(team.id, emp.id);
+                                         toast.success(`Added ${emp.name} to ${team.name}`);
+                                       }}
+                                     >
+                                       Add
+                                     </Button>
+                                    )}
+                                 </div>
                               );
                             })}
                           </div>
@@ -331,7 +333,7 @@ const ManageTeam = () => {
                             exit={{ opacity: 0, scale: 0.8, x: 10 }}
                             transition={{ duration: 0.2 }}
                           >
-                             <Badge variant="secondary" className="pl-2.5 pr-1.5 py-1 flex items-center gap-1.5 shadow-industrial">
+                             <Badge variant="secondary" className="pl-2.5 pr-1.5 py-1 flex items-center gap-1.5 shadow-sm text-xs font-medium">
                               {member.name}
                               <button
                                 onClick={() => removeMember(team.id, memberId)}
@@ -348,7 +350,7 @@ const ManageTeam = () => {
                       <motion.span 
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="text-xs text-muted-foreground italic"
+                        className="text-[11px] text-muted-foreground/70 italic font-medium"
                       >
                         No members assigned
                       </motion.span>
@@ -357,18 +359,18 @@ const ManageTeam = () => {
                 </div>
 
                 {/* Current Assignment */}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-primary" />
+                <div className="space-y-2.5">
+                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5 text-primary" />
                     Current Assignment
                   </label>
-                  <div className="p-3.5 glass-effect rounded-lg border border-border/50 shadow-industrial">
+                  <div className="p-3.5 glass-effect rounded-md border border-border/40 shadow-sm">
                     <div className="flex items-center gap-2 mb-2">
                       <FileText className="w-4 h-4 text-primary" />
-                      <span className="font-medium text-sm">{getWIName(team.currentWIId)}</span>
+                      <span className="font-semibold text-sm tracking-tight">{getWIName(team.currentWIId)}</span>
                     </div>
                     {team.currentWIId && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-medium">
                         <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                         <span>Active since 08:00 AM</span>
                       </div>
@@ -377,21 +379,21 @@ const ManageTeam = () => {
                 </div>
 
                 {/* Assign New Instruction */}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">Assign New Instruction</label>
+                <div className="space-y-2.5">
+                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Assign New Instruction</label>
                   <Select
                     onValueChange={(value) => assignWI(team.id, value)}
                     value={team.currentWIId || undefined}
                   >
-                    <SelectTrigger className="border-border shadow-industrial">
+                    <SelectTrigger className="border-border/40 shadow-sm h-9 text-sm">
                       <SelectValue placeholder="Select Work Instruction" />
                     </SelectTrigger>
-                    <SelectContent className="shadow-industrial-lg border-border">
+                    <SelectContent className="shadow-industrial-lg border-border/40">
                       {savedWIs.length === 0 ? (
-                        <div className="p-2 text-sm text-muted-foreground text-center">
+                        <div className="p-3 text-sm text-muted-foreground text-center">
                           No saved instructions found.
                           <br />
-                          <span className="text-xs opacity-70">Go to Build WI to create one.</span>
+                          <span className="text-[11px] opacity-70 font-medium">Go to Build WI to create one.</span>
                         </div>
                       ) : (
                         savedWIs.map((wi) => (
@@ -405,12 +407,12 @@ const ManageTeam = () => {
                 </div>
 
                 {/* Footer Actions */}
-                <div className="pt-4 border-t border-border/50 flex justify-between items-center gap-2">
-                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground shadow-industrial cursor-pointer">
-                    <Settings className="w-4 h-4 mr-2" />
+                <div className="pt-4 border-t border-border/30 flex justify-between items-center gap-2">
+                  <Button variant="ghost" size="sm" className="text-muted-foreground/70 hover:text-foreground shadow-sm cursor-pointer text-xs h-8">
+                    <Settings className="w-3.5 h-3.5 mr-2" />
                     Settings
                   </Button>
-                  <Button variant="outline" size="sm" className="shadow-industrial cursor-pointer">
+                  <Button variant="outline" size="sm" className="shadow-sm cursor-pointer text-xs h-8">
                     View Details
                   </Button>
                 </div>
