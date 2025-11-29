@@ -1618,52 +1618,52 @@ const Training = () => {
             </Card>
 
             {/* Classes Section */}
-            <Card className="flex flex-col h-full">
-              <CardHeader className="pb-2">
-                <CardTitle>Model Configuration</CardTitle>
-                <CardDescription>Select model type to train</CardDescription>
+            <Card className="flex flex-col h-full border-border/50 shadow-industrial glass-effect">
+              <CardHeader className="pb-4 border-b border-border/30">
+                <CardTitle className="text-lg font-bold tracking-tight">Model Configuration</CardTitle>
+                <CardDescription className="text-[11px] uppercase tracking-widest font-medium">Select model type to train</CardDescription>
               </CardHeader>
-              <CardContent className="flex-1 flex flex-col gap-4">
+              <CardContent className="flex-1 flex flex-col gap-4 pt-4">
                 <Tabs defaultValue="cnn" className="w-full flex-1 flex flex-col" onValueChange={setActiveTab}>
-                  <TabsList className="grid w-full grid-cols-2 mb-4">
-                    <TabsTrigger value="cnn">Object Detection (CNN)</TabsTrigger>
-                    <TabsTrigger value="knn">Movement (KNN)</TabsTrigger>
+                  <TabsList className="grid w-full grid-cols-2 mb-4 bg-muted/30 p-1">
+                    <TabsTrigger value="cnn" className="text-xs font-bold uppercase tracking-wider data-[state=active]:bg-background data-[state=active]:shadow-sm">CNN</TabsTrigger>
+                    <TabsTrigger value="knn" className="text-xs font-bold uppercase tracking-wider data-[state=active]:bg-background data-[state=active]:shadow-sm">KNN</TabsTrigger>
                   </TabsList>
                   
                   <TabsContent value="cnn" className="flex-1 flex flex-col data-[state=active]:flex">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-medium">Object Classes</h3>
-                      <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Class
+                      <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Object Classes</h3>
+                      <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)} className="h-7 text-xs">
+                        <Plus className="w-3 h-3 mr-1.5" />
+                        Add
                       </Button>
                     </div>
                     
-                    <div className="space-y-3 flex-1 overflow-auto max-h-[300px] pr-2">
+                    <div className="space-y-2 flex-1 overflow-auto max-h-[300px] pr-2">
                       {classes.map((cls) => (
-                        <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors group">
+                        <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors group shadow-sm">
                           <div className="flex items-center gap-3">
-                            <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
+                            <div className={`w-2 h-2 rounded-full shadow-sm ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
                             <div>
-                              <p className="font-medium text-sm">{cls.name}</p>
-                              <p className="text-xs text-muted-foreground">{cls.count} samples</p>
+                              <p className="font-bold text-sm tracking-tight">{cls.name}</p>
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-wider tabular-nums">{cls.count} samples</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[10px]">
+                            <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[9px] uppercase tracking-wider font-bold">
                               {cls.isTrained ? "Trained" : "New"}
                             </Badge>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-7 w-7"
                               onClick={() => toggleClassTraining(cls.id, false)}
                               title={cls.includeInTraining ? "Exclude from training" : "Include in training"}
                             >
                               {cls.includeInTraining ? (
-                                <Eye className="w-4 h-4 text-primary" />
+                                <Eye className="w-3.5 h-3.5 text-primary" />
                               ) : (
-                                <EyeOff className="w-4 h-4 text-muted-foreground" />
+                                <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />
                               )}
                             </Button>
                           </div>
@@ -1671,26 +1671,25 @@ const Training = () => {
                       ))}
                     </div>
 
-                    <div className="pt-4 border-t border-border mt-auto">
+                    <div className="pt-4 border-t border-border/30 mt-auto">
                       <Button 
-                        className="w-full" 
-                        size="lg" 
+                        className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm" 
                         onClick={() => startTraining(false)}
                         disabled={isTraining || classes.filter(c => c.includeInTraining).length === 0}
                       >
                         {isTraining && activeTab === 'cnn' ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Training CNN...
+                            Training...
                           </>
                         ) : (
                           <>
                             <Brain className="w-4 h-4 mr-2" />
-                            Train Object Model
+                            Train Model
                           </>
                         )}
                       </Button>
-                      <p className="text-xs text-muted-foreground text-center mt-2">
+                      <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-wider tabular-nums">
                         {classes.filter(c => c.includeInTraining).length} classes selected
                       </p>
                     </div>
@@ -1698,10 +1697,10 @@ const Training = () => {
 
                   <TabsContent value="knn" className="flex-1 flex flex-col data-[state=active]:flex">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-medium">Gesture Classes (GRU)</h3>
-                      <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Gesture
+                      <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Gesture Classes (GRU)</h3>
+                      <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)} className="h-7 text-xs">
+                        <Plus className="w-3 h-3 mr-1.5" />
+                        Add
                       </Button>
                     </div>
                     
@@ -1711,38 +1710,40 @@ const Training = () => {
                       </div>
                     ) : gestureClasses.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <Hand className="w-12 h-12 text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground">No gesture classes yet</p>
-                        <p className="text-xs text-muted-foreground">Click "Add Gesture" to create one</p>
+                        <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 flex items-center justify-center mb-3">
+                          <Hand className="w-6 h-6 text-muted-foreground" />
+                        </div>
+                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">No gesture classes yet</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Click "Add" to create one</p>
                       </div>
                     ) : (
-                      <div className="space-y-3 flex-1 overflow-auto max-h-[300px] pr-2">
+                      <div className="space-y-2 flex-1 overflow-auto max-h-[300px] pr-2">
                         {gestureClasses.map((cls) => (
                           <div 
                             key={cls.id} 
-                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer ${
+                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer shadow-sm ${
                               selectedGestureClass === cls.name 
-                                ? 'border-primary bg-primary/5' 
-                                : 'border-border hover:bg-muted/50'
+                                ? 'border-primary/50 bg-primary/10' 
+                                : 'border-border/40 bg-muted/20 hover:bg-muted/40'
                             }`}
                             onClick={() => setSelectedGestureClass(cls.name)}
                           >
                             <div className="flex items-center gap-3">
-                              <div className={`w-2 h-2 rounded-full ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
+                              <div className={`w-2 h-2 rounded-full shadow-sm ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
                               <div>
-                                <p className="font-medium text-sm">{cls.displayName || cls.name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {cls.sequenceCount} sequences • {cls.totalFrames} frames
+                                <p className="font-bold text-sm tracking-tight">{cls.displayName || cls.name}</p>
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider tabular-nums">
+                                  {cls.sequenceCount} seq • {cls.totalFrames} frames
                                 </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[10px]">
+                              <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[9px] uppercase tracking-wider font-bold">
                                 {cls.isTrained ? "Trained" : "New"}
                               </Badge>
                               {cls.sequenceCount < 5 && (
-                                <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                                  Need {5 - cls.sequenceCount} more
+                                <Badge variant="outline" className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">
+                                  +{5 - cls.sequenceCount}
                                 </Badge>
                               )}
                             </div>
@@ -1753,17 +1754,16 @@ const Training = () => {
 
                     {/* Model Info */}
                     {gestureModelInfo?.exists && (
-                      <div className="bg-muted/50 rounded-lg p-3 mb-3">
-                        <p className="text-xs font-medium text-muted-foreground mb-1">Trained Model</p>
-                        <p className="text-sm">Accuracy: {((gestureModelInfo.final_accuracy || 0) * 100).toFixed(1)}%</p>
-                        <p className="text-xs text-muted-foreground">{gestureModelInfo.num_classes} classes • {gestureModelInfo.total_samples} samples</p>
+                      <div className="bg-muted/30 border border-border/30 rounded-lg p-3 mb-3 shadow-sm">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Trained Model</p>
+                        <p className="text-sm font-bold tabular-nums">Accuracy: {((gestureModelInfo.final_accuracy || 0) * 100).toFixed(1)}%</p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider tabular-nums">{gestureModelInfo.num_classes} classes • {gestureModelInfo.total_samples} samples</p>
                       </div>
                     )}
 
-                    <div className="pt-4 border-t border-border mt-auto">
+                    <div className="pt-4 border-t border-border/30 mt-auto">
                       <Button 
-                        className="w-full" 
-                        size="lg" 
+                        className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm" 
                         variant="secondary"
                         onClick={() => startTraining(true)}
                         disabled={isTraining || gestureClasses.length < 2}
@@ -1771,17 +1771,17 @@ const Training = () => {
                         {isTraining && activeTab === 'knn' ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Training GRU...
+                            Training...
                           </>
                         ) : (
                           <>
                             <Brain className="w-4 h-4 mr-2" />
-                            Train Gesture Model
+                            Train Model
                           </>
                         )}
                       </Button>
-                      <p className="text-xs text-muted-foreground text-center mt-2">
-                        {gestureClasses.length} classes • {gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0)} total sequences
+                      <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-wider tabular-nums">
+                        {gestureClasses.length} classes • {gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0)} sequences
                       </p>
                     </div>
                   </TabsContent>
