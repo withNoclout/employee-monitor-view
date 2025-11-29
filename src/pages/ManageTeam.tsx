@@ -155,13 +155,13 @@ const ManageTeam = () => {
   return (
     <div className="min-h-screen bg-background p-8">
       {/* Header */}
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => navigate("/")}>
+          <Button variant="ghost" onClick={() => navigate("/")} className="shadow-industrial">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Dashboard
           </Button>
-          <div className="h-8 w-px bg-border" />
+          <div className="h-8 w-px bg-border/50" />
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Manage Teams</h1>
             <p className="text-muted-foreground">Assign Work Instructions and monitor team status</p>
@@ -169,12 +169,12 @@ const ManageTeam = () => {
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="shadow-industrial">
               <Plus className="w-4 h-4 mr-2" />
               Create New Team
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="shadow-industrial-lg border-border">
             <DialogHeader>
               <DialogTitle>Create New Team</DialogTitle>
               <DialogDescription>Add a new team to your organization.</DialogDescription>
@@ -187,6 +187,7 @@ const ManageTeam = () => {
                   value={newTeamName}
                   onChange={(e) => setNewTeamName(e.target.value)}
                   placeholder="e.g., Maintenance Crew"
+                  className="border-border"
                 />
               </div>
             </div>
@@ -199,68 +200,81 @@ const ManageTeam = () => {
         {sortedTeams.map((team) => {
           const status = getTeamStatus(team);
           return (
-            <Card key={team.id} className="border-border shadow-lg hover:shadow-xl transition-all">
-              <CardHeader className="pb-4">
+            <Card key={team.id} className="border-border shadow-industrial-lg hover:shadow-glow transition-all duration-300 overflow-hidden group">
+              <div className="gradient-industrial absolute inset-0 opacity-5" />
+              <CardHeader className="pb-4 relative z-10">
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
+                    <div className="p-2.5 bg-primary/10 rounded-lg border border-primary/20 shadow-glow">
                       <Users className="w-6 h-6 text-primary" />
                     </div>
                     <div>
                       <CardTitle className="text-lg">{team.name}</CardTitle>
-                      <CardDescription>{team.memberIds.length} Members</CardDescription>
+                      <CardDescription className="flex items-center gap-1.5">
+                        <Users className="w-3 h-3" />
+                        {team.memberIds.length} Members
+                      </CardDescription>
                     </div>
                   </div>
-                  <Badge variant={status.variant} className={status.className}>
+                  <Badge variant={status.variant} className={`${status.className} shadow-industrial`}>
                     {status.label}
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-5 relative z-10">
                 {/* Members Section */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-muted-foreground">Team Members</label>
+                    <label className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <Users className="w-4 h-4 text-primary" />
+                      Team Members
+                    </label>
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-primary/10 shadow-industrial">
                           <UserPlus className="w-4 h-4" />
                         </Button>
                       </DialogTrigger>
-                      <DialogContent>
+                      <DialogContent className="shadow-industrial-lg border-border max-h-[80vh]">
                         <DialogHeader>
-                          <DialogTitle>Add Member to {team.name}</DialogTitle>
+                          <DialogTitle className="flex items-center gap-2">
+                            <UserPlus className="w-5 h-5 text-primary" />
+                            Add Member to {team.name}
+                          </DialogTitle>
                           <DialogDescription>Select an employee to add to this team.</DialogDescription>
                         </DialogHeader>
-                        <div className="space-y-2 mt-4">
-                          {allEmployees.map(emp => {
-                            const isInTeam = team.memberIds.includes(emp.id);
-                            const assignedTeam = teams.find(t => t.memberIds.includes(emp.id));
+                        <ScrollArea className="max-h-[60vh]">
+                          <div className="space-y-2 mt-4 pr-4">
+                            {allEmployees.map(emp => {
+                              const isInTeam = team.memberIds.includes(emp.id);
+                              const assignedTeam = teams.find(t => t.memberIds.includes(emp.id));
 
-                            return (
-                              <div key={emp.id} className="flex items-center justify-between p-2 rounded border hover:bg-muted/50">
-                                <div>
-                                  <p className="font-medium text-sm">{emp.name}</p>
-                                  <p className="text-xs text-muted-foreground">{emp.position}</p>
+                              return (
+                                <div key={emp.id} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors shadow-industrial">
+                                  <div>
+                                    <p className="font-medium text-sm">{emp.name}</p>
+                                    <p className="text-xs text-muted-foreground">{emp.position}</p>
+                                  </div>
+                                  {isInTeam ? (
+                                    <Badge variant="secondary" className="shadow-industrial">Current</Badge>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="shadow-industrial"
+                                      onClick={() => {
+                                        addMember(team.id, emp.id);
+                                        toast.success(`Added ${emp.name} to ${team.name}`);
+                                      }}
+                                    >
+                                      Add
+                                    </Button>
+                                  )}
                                 </div>
-                                {isInTeam ? (
-                                  <Badge variant="secondary">Current</Badge>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      addMember(team.id, emp.id);
-                                      toast.success(`Added ${emp.name} to ${team.name}`);
-                                    }}
-                                  >
-                                    Add
-                                  </Button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                              );
+                            })}
+                          </div>
+                        </ScrollArea>
                       </DialogContent>
                     </Dialog>
                   </div>
@@ -269,7 +283,7 @@ const ManageTeam = () => {
                       const member = allEmployees.find(e => e.id === memberId);
                       if (!member) return null;
                       return (
-                        <Badge key={memberId} variant="secondary" className="pl-2 pr-1 py-1 flex items-center gap-1">
+                        <Badge key={memberId} variant="secondary" className="pl-2.5 pr-1.5 py-1 flex items-center gap-1.5 shadow-industrial">
                           {member.name}
                           <button
                             onClick={() => removeMember(team.id, memberId)}
@@ -286,32 +300,37 @@ const ManageTeam = () => {
                   </div>
                 </div>
 
+                {/* Current Assignment */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Current Assignment</label>
-                  <div className="p-3 bg-muted/50 rounded-lg border border-border">
+                  <label className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    Current Assignment
+                  </label>
+                  <div className="p-3.5 glass-effect rounded-lg border border-border/50 shadow-industrial">
                     <div className="flex items-center gap-2 mb-2">
                       <FileText className="w-4 h-4 text-primary" />
                       <span className="font-medium text-sm">{getWIName(team.currentWIId)}</span>
                     </div>
                     {team.currentWIId && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <CheckCircle2 className="w-3 h-3 text-green-500" />
+                        <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                         <span>Active since 08:00 AM</span>
                       </div>
                     )}
                   </div>
                 </div>
 
+                {/* Assign New Instruction */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-muted-foreground">Assign New Instruction</label>
+                  <label className="text-sm font-semibold text-foreground">Assign New Instruction</label>
                   <Select
                     onValueChange={(value) => assignWI(team.id, value)}
                     value={team.currentWIId || undefined}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="border-border shadow-industrial">
                       <SelectValue placeholder="Select Work Instruction" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="shadow-industrial-lg border-border">
                       {savedWIs.length === 0 ? (
                         <div className="p-2 text-sm text-muted-foreground text-center">
                           No saved instructions found.
@@ -329,12 +348,13 @@ const ManageTeam = () => {
                   </Select>
                 </div>
 
-                <div className="pt-4 border-t border-border flex justify-between items-center">
-                  <Button variant="ghost" size="sm" className="text-muted-foreground">
+                {/* Footer Actions */}
+                <div className="pt-4 border-t border-border/50 flex justify-between items-center gap-2">
+                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground shadow-industrial">
                     <Settings className="w-4 h-4 mr-2" />
                     Settings
                   </Button>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="shadow-industrial">
                     View Details
                   </Button>
                 </div>
