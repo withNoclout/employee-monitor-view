@@ -156,9 +156,13 @@ const ManageTeam = () => {
   return (
     <div className="min-h-screen bg-background p-8">
       {/* Header */}
-      <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
+      <div className="mb-8 flex items-center justify-between flex-wrap gap-4 relative z-20">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => navigate("/")} className="shadow-industrial">
+          <Button 
+            variant="ghost" 
+            onClick={() => navigate("/")} 
+            className="shadow-industrial hover:bg-muted/50 transition-colors cursor-pointer"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Dashboard
           </Button>
@@ -170,7 +174,7 @@ const ManageTeam = () => {
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button className="shadow-industrial">
+            <Button className="shadow-industrial cursor-pointer">
               <Plus className="w-4 h-4 mr-2" />
               Create New Team
             </Button>
@@ -192,7 +196,7 @@ const ManageTeam = () => {
                 />
               </div>
             </div>
-            <Button onClick={createTeam} className="w-full">Create Team</Button>
+            <Button onClick={createTeam} className="w-full cursor-pointer">Create Team</Button>
           </DialogContent>
         </Dialog>
       </div>
@@ -263,7 +267,7 @@ const ManageTeam = () => {
                     </label>
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-primary/10 shadow-industrial">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-primary/10 shadow-industrial cursor-pointer">
                           <UserPlus className="w-4 h-4" />
                         </Button>
                       </DialogTrigger>
@@ -289,11 +293,11 @@ const ManageTeam = () => {
                                   </div>
                                   {isInTeam ? (
                                     <Badge variant="secondary" className="shadow-industrial">Current</Badge>
-                                  ) : (
+                                   ) : (
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="shadow-industrial"
+                                      className="shadow-industrial cursor-pointer"
                                       onClick={() => {
                                         addMember(team.id, emp.id);
                                         toast.success(`Added ${emp.name} to ${team.name}`);
@@ -301,7 +305,7 @@ const ManageTeam = () => {
                                     >
                                       Add
                                     </Button>
-                                  )}
+                                   )}
                                 </div>
                               );
                             })}
@@ -327,11 +331,11 @@ const ManageTeam = () => {
                             exit={{ opacity: 0, scale: 0.8, x: 10 }}
                             transition={{ duration: 0.2 }}
                           >
-                            <Badge variant="secondary" className="pl-2.5 pr-1.5 py-1 flex items-center gap-1.5 shadow-industrial">
+                             <Badge variant="secondary" className="pl-2.5 pr-1.5 py-1 flex items-center gap-1.5 shadow-industrial">
                               {member.name}
                               <button
                                 onClick={() => removeMember(team.id, memberId)}
-                                className="hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
+                                className="hover:bg-destructive/20 rounded-full p-0.5 transition-colors cursor-pointer"
                               >
                                 <X className="w-3 h-3" />
                               </button>
@@ -402,11 +406,11 @@ const ManageTeam = () => {
 
                 {/* Footer Actions */}
                 <div className="pt-4 border-t border-border/50 flex justify-between items-center gap-2">
-                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground shadow-industrial">
+                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground shadow-industrial cursor-pointer">
                     <Settings className="w-4 h-4 mr-2" />
                     Settings
                   </Button>
-                  <Button variant="outline" size="sm" className="shadow-industrial">
+                  <Button variant="outline" size="sm" className="shadow-industrial cursor-pointer">
                     View Details
                   </Button>
                 </div>
