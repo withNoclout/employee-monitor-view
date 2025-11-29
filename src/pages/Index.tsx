@@ -7,6 +7,7 @@ import { PerformanceChart } from "@/components/PerformanceChart";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { SystemStatus } from "@/components/SystemStatus";
 import { QuickActions } from "@/components/QuickActions";
+import { Navbar } from "@/components/Navbar";
 
 const Index = () => {
   // Live Data State
@@ -119,6 +120,9 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background relative">
+      {/* Sticky Navbar */}
+      <Navbar />
+      
       {/* Subtle industrial background */}
       <div className="absolute inset-0 bg-industrial-grid opacity-[0.02] pointer-events-none" />
       

@@ -1,10 +1,6 @@
-import { Activity, Users, TrendingUp, LogOut } from "lucide-react";
+import { Activity, Users, TrendingUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
-import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
 
 interface StatCardProps {
   icon: React.ReactNode;
@@ -62,10 +58,6 @@ interface DashboardHeaderProps {
 }
 
 export const DashboardHeader = ({ stats }: DashboardHeaderProps) => {
-  const { logout } = useAuth();
-  const navigate = useNavigate();
-  const { toast } = useToast();
-
   // Default fallback values if no stats provided
   const defaultStats = {
     activeEmployees: { value: 12, trend: "+2 this week", trendDirection: 'up' as const },
@@ -75,17 +67,9 @@ export const DashboardHeader = ({ stats }: DashboardHeaderProps) => {
 
   const currentStats = stats || defaultStats;
 
-  const handleLogout = () => {
-    logout();
-    toast({
-      title: "Logged out",
-      description: "You have been successfully logged out",
-    });
-    navigate("/login");
-  };
-
   return (
-    <div className="mb-12">
+    <div className="mb-12 pt-20">
+      {/* Hero Section */}
       <div className="mb-10 relative">
         {/* Professional background effect */}
         <div className="absolute inset-0 -z-10">
@@ -93,34 +77,13 @@ export const DashboardHeader = ({ stats }: DashboardHeaderProps) => {
           <div className="absolute inset-0 bg-industrial-grid opacity-20" />
         </div>
         
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 rounded-lg gradient-primary shadow-industrial flex items-center justify-center">
-                <img src="/logo.svg" alt="NextXO Logo" className="w-7 h-7" />
-              </div>
-              <div>
-                <h1 className="text-4xl font-bold text-foreground tracking-tight">
-                  NextXO Employee Monitor
-                </h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="h-1 w-1 rounded-full bg-success animate-pulse" />
-                  <span className="text-sm text-muted-foreground font-medium">System Online</span>
-                </div>
-              </div>
-            </div>
-            <p className="text-muted-foreground text-base max-w-2xl leading-relaxed border-l-2 border-primary/30 pl-4">
-              Real-time overview of employee performance and compliance monitoring with advanced AI-powered analytics
-            </p>
-          </div>
-          <Button
-            onClick={handleLogout}
-            variant="outline"
-            className="flex items-center gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-all shadow-sm font-medium"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </Button>
+        <div className="text-center max-w-3xl mx-auto">
+          <h2 className="text-3xl font-bold text-foreground mb-3 tracking-tight">
+            Real-time Performance Dashboard
+          </h2>
+          <p className="text-muted-foreground text-base leading-relaxed">
+            Advanced AI-powered analytics and compliance monitoring for industrial workforce management
+          </p>
         </div>
       </div>
 
