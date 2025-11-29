@@ -1,16 +1,24 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Menu, X, Megaphone, Bell, Ticket, Sun, Moon } from "lucide-react";
+import { LogOut, Menu, X, Megaphone, Bell, Ticket, Sun, Moon, User, ChevronDown, Info, Shield, BellRing, Languages, Activity } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -144,15 +152,57 @@ export const Navbar = () => {
               )}
             </Button>
             
-            <Button
-              onClick={handleLogout}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-all shadow-sm font-medium"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </Button>
+            {/* User Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2 hover:bg-muted transition-all shadow-sm font-medium"
+                >
+                  <User className="w-4 h-4" />
+                  <span className="max-w-[120px] truncate">{user?.username || "User"}</span>
+                  <ChevronDown className="w-3 h-3 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-background border-border/50 shadow-industrial-lg">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">{user?.username || "User"}</p>
+                    <p className="text-xs leading-none text-muted-foreground uppercase tracking-wider">{user?.role || "Role"}</p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border/50" />
+                <DropdownMenuItem className="cursor-pointer hover:bg-muted/50">
+                  <Info className="mr-2 h-4 w-4" />
+                  <span>Information</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer hover:bg-muted/50">
+                  <Shield className="mr-2 h-4 w-4" />
+                  <span>Security</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer hover:bg-muted/50">
+                  <BellRing className="mr-2 h-4 w-4" />
+                  <span>Alert Setting</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer hover:bg-muted/50">
+                  <Languages className="mr-2 h-4 w-4" />
+                  <span>Language</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer hover:bg-muted/50">
+                  <Activity className="mr-2 h-4 w-4" />
+                  <span>Activity</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-border/50" />
+                <DropdownMenuItem 
+                  onClick={handleLogout}
+                  className="cursor-pointer text-destructive hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Mobile Menu Button */}
@@ -235,15 +285,45 @@ export const Navbar = () => {
                 </>
               )}
             </Button>
+            
+            {/* User Menu */}
+            <div className="space-y-2">
+              <div className="px-4 py-3 bg-muted/30 border border-border/30 rounded-lg">
+                <p className="text-sm font-medium">{user?.username || "User"}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">{user?.role || "Role"}</p>
+              </div>
               
-            <Button
-              onClick={handleLogout}
-              variant="outline"
-              className="w-full flex items-center justify-center gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-all"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </Button>
+              <div className="space-y-1">
+                <Button variant="outline" className="w-full justify-start gap-2 font-normal">
+                  <Info className="h-4 w-4" />
+                  Information
+                </Button>
+                <Button variant="outline" className="w-full justify-start gap-2 font-normal">
+                  <Shield className="h-4 w-4" />
+                  Security
+                </Button>
+                <Button variant="outline" className="w-full justify-start gap-2 font-normal">
+                  <BellRing className="h-4 w-4" />
+                  Alert Setting
+                </Button>
+                <Button variant="outline" className="w-full justify-start gap-2 font-normal">
+                  <Languages className="h-4 w-4" />
+                  Language
+                </Button>
+                <Button variant="outline" className="w-full justify-start gap-2 font-normal">
+                  <Activity className="h-4 w-4" />
+                  Activity
+                </Button>
+                <Button
+                  onClick={handleLogout}
+                  variant="outline"
+                  className="w-full justify-start gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

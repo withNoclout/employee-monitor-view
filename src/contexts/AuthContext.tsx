@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  user: { username: string; role: string } | null;
   login: (username: string, password: string) => boolean;
   logout: () => void;
   resetActivityTimer: () => void;
@@ -16,6 +17,7 @@ const ADMIN_PASSWORD = "admin";
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<{ username: string; role: string } | null>(null);
   const [lastActivity, setLastActivity] = useState(Date.now());
   const navigate = useNavigate();
 
@@ -23,12 +25,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const session = sessionStorage.getItem("auth_session");
     const sessionTime = sessionStorage.getItem("last_activity");
+    const storedUser = sessionStorage.getItem("user_data");
     
-    if (session && sessionTime) {
+    if (session && sessionTime && storedUser) {
       const timeSinceActivity = Date.now() - parseInt(sessionTime);
       
       if (timeSinceActivity < SESSION_TIMEOUT) {
         setIsAuthenticated(true);
+        setUser(JSON.parse(storedUser));
         setLastActivity(parseInt(sessionTime));
       } else {
         // Session expired
@@ -77,9 +81,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const login = (username: string, password: string): boolean => {
     if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
       const now = Date.now();
+      const userData = { username: username, role: "Administrator" };
       sessionStorage.setItem("auth_session", "active");
       sessionStorage.setItem("last_activity", now.toString());
+      sessionStorage.setItem("user_data", JSON.stringify(userData));
       setIsAuthenticated(true);
+      setUser(userData);
       setLastActivity(now);
       return true;
     }
@@ -89,7 +96,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = () => {
     sessionStorage.removeItem("auth_session");
     sessionStorage.removeItem("last_activity");
+    sessionStorage.removeItem("user_data");
     setIsAuthenticated(false);
+    setUser(null);
   };
 
   const resetActivityTimer = () => {
@@ -99,7 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout, resetActivityTimer }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, resetActivityTimer }}>
       {children}
     </AuthContext.Provider>
   );
