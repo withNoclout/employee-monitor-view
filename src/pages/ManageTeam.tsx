@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -196,11 +197,35 @@ const ManageTeam = () => {
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {sortedTeams.map((team) => {
-          const status = getTeamStatus(team);
-          return (
-            <Card key={team.id} className="border-border shadow-industrial-lg hover:shadow-glow transition-all duration-300 overflow-hidden group">
+      <motion.div 
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+        initial="hidden"
+        animate="visible"
+        variants={{
+          visible: {
+            transition: {
+              staggerChildren: 0.1
+            }
+          }
+        }}
+      >
+        <AnimatePresence mode="popLayout">
+          {sortedTeams.map((team) => {
+            const status = getTeamStatus(team);
+            return (
+              <motion.div
+                key={team.id}
+                layout
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: -20 }}
+                transition={{
+                  layout: { duration: 0.4, type: "spring", bounce: 0.2 },
+                  opacity: { duration: 0.3 },
+                  scale: { duration: 0.3 }
+                }}
+              >
+                <Card className="border-border shadow-industrial-lg hover:shadow-glow transition-all duration-300 overflow-hidden group h-full">
               <div className="gradient-industrial absolute inset-0 opacity-5" />
               <CardHeader className="pb-4 relative z-10">
                 <div className="flex justify-between items-start">
@@ -216,9 +241,16 @@ const ManageTeam = () => {
                       </CardDescription>
                     </div>
                   </div>
-                  <Badge variant={status.variant} className={`${status.className} shadow-industrial`}>
-                    {status.label}
-                  </Badge>
+                  <motion.div
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Badge variant={status.variant} className={`${status.className} shadow-industrial`}>
+                      {status.label}
+                    </Badge>
+                  </motion.div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-5 relative z-10">
@@ -278,26 +310,46 @@ const ManageTeam = () => {
                       </DialogContent>
                     </Dialog>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {team.memberIds.map(memberId => {
-                      const member = allEmployees.find(e => e.id === memberId);
-                      if (!member) return null;
-                      return (
-                        <Badge key={memberId} variant="secondary" className="pl-2.5 pr-1.5 py-1 flex items-center gap-1.5 shadow-industrial">
-                          {member.name}
-                          <button
-                            onClick={() => removeMember(team.id, memberId)}
-                            className="hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
+                  <motion.div 
+                    className="flex flex-wrap gap-2"
+                    layout
+                  >
+                    <AnimatePresence mode="popLayout">
+                      {team.memberIds.map(memberId => {
+                        const member = allEmployees.find(e => e.id === memberId);
+                        if (!member) return null;
+                        return (
+                          <motion.div
+                            key={memberId}
+                            layout
+                            initial={{ opacity: 0, scale: 0.8, x: -10 }}
+                            animate={{ opacity: 1, scale: 1, x: 0 }}
+                            exit={{ opacity: 0, scale: 0.8, x: 10 }}
+                            transition={{ duration: 0.2 }}
                           >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </Badge>
-                      );
-                    })}
+                            <Badge variant="secondary" className="pl-2.5 pr-1.5 py-1 flex items-center gap-1.5 shadow-industrial">
+                              {member.name}
+                              <button
+                                onClick={() => removeMember(team.id, memberId)}
+                                className="hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
                     {team.memberIds.length === 0 && (
-                      <span className="text-xs text-muted-foreground italic">No members assigned</span>
+                      <motion.span 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-xs text-muted-foreground italic"
+                      >
+                        No members assigned
+                      </motion.span>
                     )}
-                  </div>
+                  </motion.div>
                 </div>
 
                 {/* Current Assignment */}
@@ -360,9 +412,11 @@ const ManageTeam = () => {
                 </div>
               </CardContent>
             </Card>
-          )
-        })}
-      </div>
+          </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 };
