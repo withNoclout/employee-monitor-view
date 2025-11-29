@@ -1,5 +1,8 @@
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Clock, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { Clock, CheckCircle, AlertCircle, Info, Calendar, ClipboardList } from "lucide-react";
+import { useActivityLog } from "@/hooks/useActivityLog";
+import { formatDistanceToNow } from "date-fns";
 
 interface ActivityItem {
   time: string;
@@ -9,38 +12,19 @@ interface ActivityItem {
 }
 
 export const ActivityTimeline = () => {
-  const activities: ActivityItem[] = [
-    {
-      time: "2 mins ago",
-      title: "test test completed task #247",
-      type: "success",
-      icon: <CheckCircle className="w-4 h-4" />,
-    },
-    {
-      time: "5 mins ago",
-      title: "Michael Chen logged in",
-      type: "info",
-      icon: <Info className="w-4 h-4" />,
-    },
-    {
-      time: "8 mins ago",
-      title: "James Brown - Compliance alert",
-      type: "warning",
-      icon: <AlertCircle className="w-4 h-4" />,
-    },
-    {
-      time: "12 mins ago",
-      title: "Emma Williams completed task #246",
-      type: "success",
-      icon: <CheckCircle className="w-4 h-4" />,
-    },
-    {
-      time: "15 mins ago",
-      title: "Lisa Anderson logged in",
-      type: "info",
-      icon: <Info className="w-4 h-4" />,
-    },
-  ];
+  const { activities } = useActivityLog();
+
+  const getActivityIcon = (type: string, taskType?: string) => {
+    if (taskType === 'daily') return <ClipboardList className="w-4 h-4" />;
+    if (taskType === 'monthly') return <Calendar className="w-4 h-4" />;
+
+    switch (type) {
+      case "success": return <CheckCircle className="w-4 h-4" />;
+      case "warning": return <AlertCircle className="w-4 h-4" />;
+      case "info": return <Info className="w-4 h-4" />;
+      default: return <Info className="w-4 h-4" />;
+    }
+  };
 
   const getActivityColor = (type: string) => {
     switch (type) {
@@ -65,17 +49,23 @@ export const ActivityTimeline = () => {
       </CardHeader>
       <CardContent className="p-6">
         <div className="space-y-4">
-          {activities.map((activity, index) => (
-            <div key={index} className="flex items-start gap-3 group hover:bg-muted/30 p-2 rounded-lg transition-colors">
-              <div className={`p-2 rounded-full ${getActivityColor(activity.type)} transition-transform group-hover:scale-110`}>
-                {activity.icon}
+          {activities.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
+          ) : (
+            activities.map((activity) => (
+              <div key={activity.id} className="flex items-start gap-3 group hover:bg-muted/30 p-2 rounded-lg transition-colors">
+                <div className={`p-2 rounded-full ${getActivityColor(activity.type)} transition-transform group-hover:scale-110`}>
+                  {getActivityIcon(activity.type, activity.taskType)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">{activity.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {formatDistanceToNow(new Date(activity.time), { addSuffix: true })}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground">{activity.title}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{activity.time}</p>
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </CardContent>
     </Card>
