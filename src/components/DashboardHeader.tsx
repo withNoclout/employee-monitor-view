@@ -14,22 +14,25 @@ interface StatCardProps {
 }
 
 const StatCard = ({ icon, label, value, trend }: StatCardProps) => (
-  <Card className="border-border shadow-lg hover:shadow-xl transition-all overflow-hidden group">
-    <div className="absolute inset-0 gradient-primary opacity-0 group-hover:opacity-5 transition-opacity" />
+  <Card className="border-border shadow-industrial hover:shadow-industrial-lg transition-all duration-300 overflow-hidden group relative bg-card">
+    {/* Hover effect background */}
+    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-accent/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+    
     <CardContent className="p-6 relative">
       <div className="flex items-center justify-between">
         <div className="flex-1">
-          <p className="text-sm font-medium text-muted-foreground mb-2">{label}</p>
-          <div className="text-3xl font-bold text-foreground mb-1">{value}</div>
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">{label}</p>
+          <div className="text-3xl font-bold text-foreground mb-2 font-mono tracking-tight">{value}</div>
           {trend && (
-            <p className="text-sm text-success font-medium flex items-center gap-1.5">
+            <p className="text-sm text-success font-semibold flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
               {trend}
             </p>
           )}
         </div>
-        <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-          <div className="text-white">
+        <div className="w-16 h-16 rounded-xl gradient-industrial flex items-center justify-center shadow-industrial group-hover:scale-110 transition-transform duration-300 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-accent/20 group-hover:from-primary/40 group-hover:to-accent/30 transition-colors duration-300" />
+          <div className="text-white relative z-10">
             {icon}
           </div>
         </div>
@@ -82,23 +85,38 @@ export const DashboardHeader = ({ stats }: DashboardHeaderProps) => {
   };
 
   return (
-    <div className="mb-10">
-      <div className="mb-8 relative">
-        <div className="absolute inset-0 gradient-primary opacity-5 blur-3xl -z-10" />
+    <div className="mb-12">
+      <div className="mb-10 relative">
+        {/* Professional background effect */}
+        <div className="absolute inset-0 -z-10">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
+          <div className="absolute inset-0 bg-industrial-grid opacity-20" />
+        </div>
+        
         <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-4xl font-bold text-foreground mb-3 flex items-center gap-3">
-              <img src="/logo.svg" alt="NextXO Logo" className="w-10 h-10" />
-              NextXO Employee Monitor
-            </h1>
-            <p className="text-muted-foreground text-lg">
-              Real-time overview of employee performance and compliance monitoring
+          <div className="flex-1">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 rounded-lg gradient-primary shadow-industrial flex items-center justify-center">
+                <img src="/logo.svg" alt="NextXO Logo" className="w-7 h-7" />
+              </div>
+              <div>
+                <h1 className="text-4xl font-bold text-foreground tracking-tight">
+                  NextXO Employee Monitor
+                </h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="h-1 w-1 rounded-full bg-success animate-pulse" />
+                  <span className="text-sm text-muted-foreground font-medium">System Online</span>
+                </div>
+              </div>
+            </div>
+            <p className="text-muted-foreground text-base max-w-2xl leading-relaxed border-l-2 border-primary/30 pl-4">
+              Real-time overview of employee performance and compliance monitoring with advanced AI-powered analytics
             </p>
           </div>
           <Button
             onClick={handleLogout}
             variant="outline"
-            className="flex items-center gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-all"
+            className="flex items-center gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-all shadow-sm font-medium"
           >
             <LogOut className="w-4 h-4" />
             Logout
