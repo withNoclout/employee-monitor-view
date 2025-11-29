@@ -1,11 +1,12 @@
+import React from "react";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { EmployeeCard } from "@/components/EmployeeCard";
 import { PerformanceChart } from "@/components/PerformanceChart";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { SystemStatus } from "@/components/SystemStatus";
 import { QuickActions } from "@/components/QuickActions";
-import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
 
 const Index = () => {
   const employees = [
@@ -63,7 +64,6 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-[1600px]">
         <DashboardHeader />
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2">
             <PerformanceChart />
@@ -72,7 +72,6 @@ const Index = () => {
             <SystemStatus />
           </div>
         </div>
-
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-foreground mb-2 flex items-center gap-3">
             <div className="w-1 h-8 gradient-primary rounded-full" />
@@ -82,13 +81,11 @@ const Index = () => {
             Real-time monitoring with live camera feeds and performance tracking
           </p>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {employees.map((employee) => (
             <EmployeeCard key={employee.id} {...employee} />
           ))}
         </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <ActivityTimeline />
@@ -104,7 +101,8 @@ const Index = () => {
           </div>
         </div>
       </div>
-      );
+    </div>
+  );
 };
 
-      export default Index;
+export default Index;
