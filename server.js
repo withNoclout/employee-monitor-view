@@ -83,6 +83,58 @@ app.get('/api/logs', async (req, res) => {
     }
 });
 
+// New endpoint to get training logs
+app.get('/api/train/logs', (req, res) => {
+    try {
+        const logs = fs.readFileSync(TRAINING_LOG_FILE, 'utf-8');
+        res.json({ logs });
+    } catch (err) {
+        console.error('Error reading training log file:', err);
+        res.status(500).json({ error: 'Failed to read logs' });
+    }
+});
+
+// New endpoint to provide parsed loss metrics for the graph
+app.get('/api/train/metrics', (req, res) => {
+    try {
+        const logContent = fs.readFileSync(TRAINING_LOG_FILE, 'utf-8');
+        const lines = logContent.split('\n');
+        const metrics = [];
+        const progressPrefix = '[PROGRESS]';
+        for (const line of lines) {
+            if (line.includes(progressPrefix)) {
+                try {
+                    const jsonStr = line.split(progressPrefix)[1];
+                    const data = JSON.parse(jsonStr);
+
+                    if (data.type === 'epoch_end') {
+                        metrics.push({
+                            epoch: data.epoch,
+                            totalEpochs: data.total_epochs,
+                            loss: data.total_loss,
+                            box_loss: data.box_loss,
+                            cls_loss: data.cls_loss,
+                            dfl_loss: data.dfl_loss,
+                            mAP50: 0,
+                            mAP50_95: 0
+                        });
+                    } else if (data.type === 'validation' && metrics.length > 0) {
+                        const lastMetric = metrics[metrics.length - 1];
+                        lastMetric.mAP50 = data.mAP50;
+                        lastMetric.mAP50_95 = data.mAP50_95;
+                    }
+                } catch (e) {
+                    console.error('Error parsing log line:', e);
+                }
+            }
+        }
+        res.json({ metrics });
+    } catch (err) {
+        console.error('Error parsing training metrics:', err);
+        res.status(500).json({ error: 'Failed to parse metrics' });
+    }
+});
+
 // --- End Log Service Endpoints ---
 
 app.post('/api/save-dataset', upload.single('dataset'), (req, res) => {
@@ -284,39 +336,55 @@ app.post('/api/yolo/save-annotation', (req, res) => {
     }
 });
 
+// Log file path
+const TRAINING_LOG_FILE = path.join(__dirname, 'training.log');
+
 app.post('/api/train', (req, res) => {
     console.log('Starting training process...');
 
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Transfer-Encoding', 'chunked');
+    // Reset log file
+    fs.writeFileSync(TRAINING_LOG_FILE, '');
+
+    console.log(`[API] Starting training...`);
+    console.log(`[API] Python Path: ${PYTHON_PATH}`);
+    console.log(`[API] Script Path: ${TRAIN_SCRIPT}`);
 
     const pythonProcess = spawn(PYTHON_PATH, [TRAIN_SCRIPT]);
     activeTrainingProcess = pythonProcess;
 
-    pythonProcess.stdout.on('data', (data) => {
-        const msg = data.toString();
-        console.log(`[Train]: ${msg}`);
-        res.write(msg);
-    });
+    // Stream output to log file
+    const logStream = fs.createWriteStream(TRAINING_LOG_FILE, { flags: 'a' });
 
-    pythonProcess.stderr.on('data', (data) => {
-        const msg = data.toString();
-        console.error(`[Train Error]: ${msg}`);
-        res.write(msg);
+    pythonProcess.stdout.pipe(logStream);
+    pythonProcess.stderr.pipe(logStream);
+
+    pythonProcess.on('error', (err) => {
+        console.error('[API] Failed to start subprocess:', err);
+        fs.appendFileSync(TRAINING_LOG_FILE, `\n[TRAINING_FAILED] Spawn Error: ${err.message}\n`);
     });
 
     pythonProcess.on('close', (code) => {
         activeTrainingProcess = null;
         console.log(`Training process exited with code ${code}`);
         if (code === 0) {
-            res.write('\n[TRAINING_COMPLETE]\n');
+            fs.appendFileSync(TRAINING_LOG_FILE, '\n[TRAINING_COMPLETE]\n');
         } else {
-            res.write(`\n[TRAINING_FAILED] Code: ${code}\n`);
+            fs.appendFileSync(TRAINING_LOG_FILE, `\n[TRAINING_FAILED] Code: ${code}\n`);
         }
-        res.end();
     });
+
+    // Return immediately
+    res.json({ message: 'Training started', logFile: TRAINING_LOG_FILE });
 });
+
+app.get('/api/train/logs', (req, res) => {
+    if (!fs.existsSync(TRAINING_LOG_FILE)) {
+        return res.json({ logs: '' });
+    }
+    const logs = fs.readFileSync(TRAINING_LOG_FILE, 'utf8');
+    res.json({ logs });
+});
+
 
 app.post('/api/train/cancel', (req, res) => {
     if (activeTrainingProcess) {
@@ -620,38 +688,42 @@ app.delete('/api/gestures/sequences/:className/:sequenceId', (req, res) => {
 app.post('/api/gestures/train', (req, res) => {
     console.log('Starting gesture model training...');
 
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Transfer-Encoding', 'chunked');
+    // Reset log file
+    fs.writeFileSync(TRAINING_LOG_FILE, '');
+
+    console.log(`[API] Starting gesture training...`);
+    console.log(`[API] Python Path: ${PYTHON_PATH}`);
+    console.log(`[API] Script Path: ${GESTURE_TRAIN_SCRIPT}`);
 
     const pythonProcess = spawn(PYTHON_PATH, [GESTURE_TRAIN_SCRIPT, '--train']);
     activeGestureTrainingProcess = pythonProcess;
 
-    pythonProcess.stdout.on('data', (data) => {
-        const msg = data.toString();
-        console.log(`[Gesture Train]: ${msg}`);
-        res.write(msg);
-    });
+    // Stream output to log file
+    const logStream = fs.createWriteStream(TRAINING_LOG_FILE, { flags: 'a' });
 
-    pythonProcess.stderr.on('data', (data) => {
-        const msg = data.toString();
-        console.error(`[Gesture Train Error]: ${msg}`);
-        res.write(msg);
+    pythonProcess.stdout.pipe(logStream);
+    pythonProcess.stderr.pipe(logStream);
+
+    pythonProcess.on('error', (err) => {
+        console.error('[API] Failed to start gesture subprocess:', err);
+        fs.appendFileSync(TRAINING_LOG_FILE, `\n[TRAINING_FAILED] Spawn Error: ${err.message}\n`);
     });
 
     pythonProcess.on('close', (code) => {
         activeGestureTrainingProcess = null;
         console.log(`Gesture training process exited with code ${code}`);
         if (code === 0) {
-            res.write('\n[TRAINING_COMPLETE]\n');
+            fs.appendFileSync(TRAINING_LOG_FILE, '\n[TRAINING_COMPLETE]\n');
             // Reload gesture inference process with new model
             console.log('[Gesture] Reloading inference process after training...');
             startGestureProcess();
         } else {
-            res.write(`\n[TRAINING_FAILED] Code: ${code}\n`);
+            fs.appendFileSync(TRAINING_LOG_FILE, `\n[TRAINING_FAILED] Code: ${code}\n`);
         }
-        res.end();
     });
+
+    // Return immediately
+    res.json({ message: 'Gesture training started', logFile: TRAINING_LOG_FILE });
 });
 
 app.post('/api/gestures/train/cancel', (req, res) => {

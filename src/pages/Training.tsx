@@ -11,11 +11,11 @@ import * as handPoseDetection from '@tensorflow-models/hand-pose-detection';
 import * as mobilenet from '@tensorflow-models/mobilenet';
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
+import { LossGraphCard } from "@/components/LossGraphCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import LossGraph from "@/components/LossGraph";
 
 interface ClassInfo {
   id: string;
@@ -40,6 +40,17 @@ interface GestureClass {
   trainedSequenceCount?: number; // Number of sequences when last trained
   duration?: number; // Recording duration in seconds
 }
+interface Metric {
+  epoch: number;
+  totalEpochs: number;
+  loss: number;
+  box_loss?: number;
+  cls_loss?: number;
+  dfl_loss?: number;
+  mAP50?: number;
+  mAP50_95?: number;
+}
+
 
 const Training = () => {
   const navigate = useNavigate();
@@ -61,8 +72,40 @@ const Training = () => {
 
   // New state for loss graph
   const [lossHistory, setLossHistory] = useState<number[]>([]);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+
+  // Refs for video and canvas
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Refs for video and canvase, setCurrentPhase] = useState(1);
   const [currentPhase, setCurrentPhase] = useState(1);
   const [phaseDescription, setPhaseDescription] = useState("Frozen backbone - training detection head only");
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  useEffect(() => {
+    if (!isTraining) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('http://localhost:3000/api/train/metrics');
+        if (res.ok) {
+          const data = await res.json();
+          const newMetrics = data.metrics || [];
+          setMetrics(newMetrics);
+
+          if (newMetrics.length > 0) {
+            const last = newMetrics[newMetrics.length - 1];
+            if (last.mAP50 !== undefined) setMAP50(last.mAP50);
+            if (last.mAP50_95 !== undefined) setMAP50_95(last.mAP50_95);
+            if (last.loss !== undefined) setLoss(last.loss);
+            if (last.epoch !== undefined) setCurrentEpoch(last.epoch);
+            if (last.totalEpochs !== undefined) setTotalEpochs(last.totalEpochs);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch training metrics', e);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [isTraining]);
+
   const [mAP50, setMAP50] = useState<number | null>(null);
   const [mAP50_95, setMAP50_95] = useState<number | null>(null);
 
@@ -896,110 +939,187 @@ const Training = () => {
   };
 
   const startTraining = async (isGesture: boolean) => {
-    if (isGesture) {
-      if (gestureClasses.length < 2) {
-        toast.error("Need at least 2 gesture classes to train");
-        return;
-      }
-
-      const totalSequences = gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0);
-      if (totalSequences < 10) {
-        toast.error("Need at least 10 sequences total to train. Record more gestures.");
+    // Check if we have enough classes
+    if (!isGesture) {
+      if (classes.length < 1) {
+        toast.error("You need at least 1 class to train the model");
         return;
       }
     } else {
-      const activeClasses = classes.filter(c => c.includeInTraining);
-      if (activeClasses.length < 2) {
-        toast.error("Need at least 2 classes to train");
-        return;
+      // Check for gesture sequences
+      try {
+        const response = await fetch('http://localhost:3000/api/gestures/sequences');
+        const sequences = await response.json();
+        if (sequences.length < 2) { // Minimal check
+          // toast.warning("Warning: Low number of gesture sequences");
+        }
+      } catch (e) {
+        console.error("Failed to check sequences", e);
       }
     }
 
     setIsTraining(true);
     setTrainingProgress(0);
-    setLoss(null);
-    setAccuracy(null);
-    setLossHistory([]);
     setCurrentEpoch(0);
-    setCurrentPhase(1);
+    setTotalEpochs(100); // Default
+    setLoss(0);
+    setLossHistory([]);
     setPhaseDescription("Initializing training environment...");
+    setMAP50(null);
+    setMAP50_95(null);
+
+    // Reset debug logs
+    // setDebugLogs([]);
 
     try {
       const endpoint = isGesture ? 'http://localhost:3000/api/gestures/train' : 'http://localhost:3000/api/train';
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-      });
+      const response = await fetch(endpoint, { method: 'POST' });
 
       if (!response.ok) throw new Error('Failed to start training');
-      if (!response.body) throw new Error('No response body');
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      // Start polling for logs
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const logResponse = await fetch('http://localhost:3000/api/train/logs');
+          const { logs } = await logResponse.json();
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+          if (!logs) return;
 
-        const text = decoder.decode(value);
-        const lines = text.split('\n');
+          const lines = logs.split('\n');
 
-        for (const line of lines) {
-          if (!line.trim()) continue;
+          // Process all lines
+          for (const rawLine of lines) {
+            if (!rawLine.trim()) continue;
 
-          if (line.includes('[TRAINING_COMPLETE]')) {
-            toast.success("Training completed successfully!");
-            if (isGesture) {
-              fetchGestureModelInfo();
-              fetchGestureClasses();
-            }
-            setIsTraining(false);
-            return;
-          }
-          if (line.includes('[TRAINING_FAILED]')) {
-            throw new Error("Training process failed");
-          }
+            // Strip ANSI color codes for cleaner parsing
+            let line = rawLine.replace(/\u001b\[[0-9;]*m/g, '');
 
-          try {
-            // Try to parse JSON progress
-            const data = JSON.parse(line);
-
-            // Handle epoch progress
-            if (data.epoch !== undefined) {
-              setCurrentEpoch(data.epoch);
-              setTotalEpochs(data.total_epochs || 100);
-              setTrainingProgress(data.progress || (data.epoch / (data.total_epochs || 100)) * 100);
-              if (data.loss !== undefined) setLoss(data.loss);
-
-              // Use val_accuracy for display (more meaningful)
-              if (data.val_accuracy !== undefined) setAccuracy(data.val_accuracy);
-              else if (data.accuracy !== undefined) setAccuracy(data.accuracy);
-
-              if (data.val_loss !== undefined) {
-                setLossHistory(prev => [...prev, data.val_loss]);
+            if (line.includes('[TRAINING_COMPLETE]')) {
+              if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+              toast.success("Training completed successfully!");
+              if (isGesture) {
+                fetchGestureModelInfo();
+                fetchGestureClasses();
               }
-              // Update phase description with current epoch info
-              setPhaseDescription(`Epoch ${data.epoch}/${data.total_epochs || 100} - Loss: ${data.loss?.toFixed(4) || '--'}`);
+              setIsTraining(false);
+              return;
+            }
+            if (line.includes('[TRAINING_FAILED]')) {
+              if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+              throw new Error("Training process failed");
             }
 
-            // Handle phase updates (CNN)
-            if (data.phase) {
-              setCurrentPhase(data.phase);
-              setPhaseDescription(data.description || `Phase ${data.phase}`);
-            }
+            try {
+              // Check for [PROGRESS] prefix and extract JSON
+              let jsonStr = line;
+              if (line.includes('[PROGRESS]')) {
+                const parts = line.split('[PROGRESS]');
+                if (parts.length > 1) {
+                  jsonStr = parts[1];
+                }
+              }
 
-            // Handle metrics (CNN)
-            if (data.metrics) {
-              if (data.metrics.map50 !== undefined) setMAP50(data.metrics.map50);
-              if (data.metrics.map50_95 !== undefined) setMAP50_95(data.metrics.map50_95);
-            }
+              // Try to parse JSON progress
+              const data = JSON.parse(jsonStr);
 
-          } catch (e) {
-            // Not JSON, ignore
-            console.log("Training log:", line);
+              // Handle epoch progress
+              if (data.epoch !== undefined) {
+                setCurrentEpoch(data.epoch);
+                setTotalEpochs(data.total_epochs || 100);
+                setTrainingProgress(data.progress || (data.epoch / (data.total_epochs || 100)) * 100);
+                if (data.loss !== undefined) setLoss(data.loss);
+
+                // Use val_accuracy for display (more meaningful)
+                if (data.val_accuracy !== undefined) setAccuracy(data.val_accuracy);
+                else if (data.accuracy !== undefined) setAccuracy(data.accuracy);
+
+                // Update phase description with current epoch info
+                setPhaseDescription(`Epoch ${data.epoch}/${data.total_epochs || 100} - Loss: ${data.loss?.toFixed(4) || '--'}`);
+              }
+
+              // Handle phase updates (CNN)
+              if (data.phase) {
+                setCurrentPhase(data.phase);
+                setPhaseDescription(data.description || `Phase ${data.phase}`);
+              }
+
+              // Handle metrics (CNN)
+              if (data.metrics) {
+                if (data.metrics.map50 !== undefined) setMAP50(data.metrics.map50);
+                if (data.metrics.map50_95 !== undefined) setMAP50_95(data.metrics.map50_95);
+              }
+
+            } catch (e) {
+              // Not JSON, try to parse raw YOLO output
+              // Example: 2/90 0G 1.714 2.579 1.869 21 640: 60%
+              // Pattern: Epoch/Total Mem Box Cls DFL Instances Size
+              const match = line.trim().match(/^(\d+)\/(\d+)\s+\S+\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)/);
+
+              if (match) {
+                const current = parseInt(match[1]);
+                const total = parseInt(match[2]);
+                const boxLoss = parseFloat(match[3]);
+                const clsLoss = parseFloat(match[4]);
+                const dflLoss = parseFloat(match[5]);
+                const totalLoss = boxLoss + clsLoss + dflLoss;
+
+                setCurrentEpoch(current);
+                setTotalEpochs(total);
+                setTrainingProgress((current / total) * 100);
+                setLoss(totalLoss);
+
+                setPhaseDescription(`Epoch ${current}/${total} - Loss: ${totalLoss.toFixed(4)}`);
+              } else {
+                // Try simpler epoch match if full pattern fails
+                const epochMatch = line.trim().match(/^(\d+)\/(\d+)\s+/);
+                if (epochMatch) {
+                  const current = parseInt(epochMatch[1]);
+                  const total = parseInt(epochMatch[2]);
+                  setCurrentEpoch(current);
+                  setTotalEpochs(total);
+                  setTrainingProgress((current / total) * 100);
+                }
+              }
+            }
           }
+
+          // Re-build loss history from scratch to avoid duplicates since we read the whole file
+          // This is inefficient but robust for small log files (training logs aren't huge)
+          const newLossHistory: number[] = [];
+          for (const rawLine of lines) {
+            const line = rawLine.replace(/\u001b\[[0-9;]*m/g, '');
+            const match = line.trim().match(/^(\d+)\/(\d+)\s+\S+\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)/);
+            if (match) {
+              const boxLoss = parseFloat(match[3]);
+              const clsLoss = parseFloat(match[4]);
+              const dflLoss = parseFloat(match[5]);
+              newLossHistory.push(boxLoss + clsLoss + dflLoss);
+            } else {
+              // Try JSON format
+              try {
+                let jsonStr = line;
+                if (line.includes('[PROGRESS]')) {
+                  const parts = line.split('[PROGRESS]');
+                  if (parts.length > 1) jsonStr = parts[1];
+                }
+                const data = JSON.parse(jsonStr);
+                if (data.val_loss !== undefined) newLossHistory.push(data.val_loss);
+                else if (data.loss !== undefined) newLossHistory.push(data.loss);
+              } catch (e) { }
+            }
+          }
+          if (newLossHistory.length > 0) {
+            setLossHistory(newLossHistory);
+          }
+
+        } catch (error) {
+          console.error("Polling error:", error);
         }
-      }
+      }, 1000);
+
+      // The polling loop will see [TRAINING_FAILED] and stop itself.
+      // But we should also store it in a ref to clear on unmount.
+
     } catch (error: any) {
       console.error("Training error:", error);
       if (error.name !== 'AbortError') {
@@ -1007,9 +1127,6 @@ const Training = () => {
       }
       setIsTraining(false);
     }
-
-
-
   };
 
   useEffect(() => {
@@ -1118,6 +1235,14 @@ const Training = () => {
     };
   }, [activeTab, cnnInputMode, isAnnotating]);
 
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
   const handleEmergencyStop = async () => {
     if (!isTraining) return;
 
@@ -1131,6 +1256,10 @@ const Training = () => {
       if (response.ok) {
         toast.error("Training stopped by user (Emergency Stop)");
         setIsTraining(false);
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
       } else {
         toast.error("Failed to stop training");
       }
@@ -1253,16 +1382,25 @@ const Training = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="mb-4">
-                    <LossGraph
-                      lossHistory={lossHistory}
-                      currentEpoch={currentEpoch}
-                      totalEpochs={totalEpochs}
-                      currentPhase={currentPhase}
-                      phaseDescription={phaseDescription}
+                  <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <LossGraphCard
+                      title="Total Loss"
+                      data={metrics}
+                      xKey="epoch"
+                      yKey="loss"
+                      color="hsl(var(--primary))"
+                    />
+                    <LossGraphCard
+                      title="mAP50 Accuracy"
+                      data={metrics}
+                      xKey="epoch"
+                      yKey="mAP50"
+                      color="#10b981"
                     />
                   </div>
                 )}
+
+
               </CardContent>
             </Card>
           )}
