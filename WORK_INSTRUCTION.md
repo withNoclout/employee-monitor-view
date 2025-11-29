@@ -17,7 +17,7 @@
 ## 2. Backend Responsibilities
 - **Express Server (`server.js`)**
   - Hosts REST endpoints (`/api/logs`, `/api/save-dataset`, etc.).
-  - **Log Service (`src/server/logService.ts`)** – appends JSON‑Lines to `logs/assembly_logs.jsonl` and reads them with pagination.
+  - **Log Service (`src/server/logService.ts`)** – appends JSON‑Lines to hierarchical paths (Task/Component/Part/Date).
   - Handles file uploads for YOLO datasets and runs Python scripts.
 - **Log Persistence**
   - Currently file‑based (fast append). Can be swapped for a DB (PostgreSQL/MongoDB) by replacing `logService` implementation.

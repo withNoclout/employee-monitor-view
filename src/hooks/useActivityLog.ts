@@ -7,77 +7,83 @@ export interface ActivityItem {
     type: 'success' | 'warning' | 'info';
     employeeName?: string;
     taskType?: 'daily' | 'monthly' | 'system';
+    component?: string;
+    action?: string;
+    status?: string;
+    details?: string;
 }
-
-const STORAGE_KEY = 'employee_activity_log';
 
 /**
  * Hook to manage activity log entries.
- * Persists to localStorage and synchronizes across tabs/windows.
+ * Interacts with the backend API to fetch and save logs.
  */
 export const useActivityLog = () => {
     const [activities, setActivities] = useState<ActivityItem[]>([]);
 
-    // Load from localStorage on mount
+    // Fetch logs from server on mount
     useEffect(() => {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            setActivities(JSON.parse(saved));
-        } else {
-            // Seed with default data if empty
-            const initialData: ActivityItem[] = [
-                {
-                    id: '1',
-                    time: new Date(Date.now() - 1000 * 60 * 5).toISOString(), // 5 mins ago
-                    title: 'Michael Chen completed Daily Safety Check',
-                    type: 'success',
-                    employeeName: 'Michael Chen',
-                    taskType: 'daily',
-                },
-                {
-                    id: '2',
-                    time: new Date(Date.now() - 1000 * 60 * 30).toISOString(), // 30 mins ago
-                    title: 'Emma Williams submitted Monthly Performance Report',
-                    type: 'info',
-                    employeeName: 'Emma Williams',
-                    taskType: 'monthly',
-                },
-                {
-                    id: '3',
-                    time: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-                    title: 'System Alert: High CPU Usage',
-                    type: 'warning',
-                    taskType: 'system',
-                },
-            ];
-            setActivities(initialData);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
-        }
+        fetchLogs();
     }, []);
 
-    // Sync across tabs/windows via storage event
-    useEffect(() => {
-        const handler = (e: StorageEvent) => {
-            if (e.key === STORAGE_KEY && e.newValue) {
-                setActivities(JSON.parse(e.newValue));
+    const fetchLogs = async () => {
+        try {
+            const response = await fetch('/api/logs?limit=50');
+            if (response.ok) {
+                const data = await response.json();
+                // Transform backend log format to ActivityItem if needed
+                // Backend: { timestamp, component, action, user, status, details, ... }
+                // Frontend: { id, time, title, type, ... }
+
+                const mapped: ActivityItem[] = data.logs.map((log: any, index: number) => ({
+                    id: log.timestamp + index, // simple unique id
+                    time: log.timestamp,
+                    title: `${log.user} - ${log.action} ${log.component}`,
+                    type: log.status === 'Success' ? 'success' : log.status === 'Warning' ? 'warning' : 'info',
+                    employeeName: log.user,
+                    component: log.component,
+                    action: log.action,
+                    status: log.status,
+                    details: log.details
+                }));
+                setActivities(mapped);
             }
-        };
-        window.addEventListener('storage', handler);
-        return () => window.removeEventListener('storage', handler);
-    }, []);
-
-    const addActivity = (activity: Omit<ActivityItem, 'id' | 'time'>) => {
-        setActivities(prev => {
-            const newActivity: ActivityItem = {
-                ...activity,
-                id: Date.now().toString(),
-                time: new Date().toISOString(),
-            };
-            const updated = [newActivity, ...prev].slice(0, 50); // keep latest 50
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-            return updated;
-        });
+        } catch (error) {
+            console.error('Failed to fetch logs:', error);
+        }
     };
 
-    return { activities, addActivity };
+    const addActivity = async (activity: Partial<ActivityItem>) => {
+        // Optimistic update
+        const newActivity: ActivityItem = {
+            id: Date.now().toString(),
+            time: new Date().toISOString(),
+            title: activity.title || 'Unknown Activity',
+            type: activity.type || 'info',
+            ...activity
+        } as ActivityItem;
+
+        setActivities(prev => [newActivity, ...prev].slice(0, 50));
+
+        // Send to backend
+        try {
+            await fetch('/api/logs', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    timestamp: newActivity.time,
+                    component: activity.component || 'System',
+                    action: activity.action || 'Log',
+                    user: activity.employeeName || 'Unknown',
+                    status: activity.type === 'success' ? 'Success' : activity.type === 'warning' ? 'Warning' : 'Error',
+                    details: activity.details || activity.title
+                }),
+            });
+        } catch (error) {
+            console.error('Failed to save log:', error);
+        }
+    };
+
+    return { activities, addActivity, refreshLogs: fetchLogs };
 };

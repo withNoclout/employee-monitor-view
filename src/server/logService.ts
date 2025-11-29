@@ -1,45 +1,125 @@
-// src/server/logService.ts
-import { promises as fs } from "fs";
-import path from "path";
+import { promises as fs } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { getLogFilePath } from './logPath.js';
 
-// Directory where logs will be stored (relative to project root)
-const LOG_DIR = path.resolve(__dirname, "../../logs");
-const LOG_FILE = path.join(LOG_DIR, "assembly_logs.jsonl");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// Ensure the logs directory exists
-export const ensureLogDir = async () => {
+// Ensure logs directory exists
+const LOGS_DIR = path.join(__dirname, '../../logs');
+
+export interface LogEntry {
+    timestamp: string;
+    component: string;
+    action: string;
+    user: string;
+    status: 'Success' | 'Warning' | 'Error';
+    details?: string;
+    assemblyId?: string;
+    partId?: string;
+    taskName?: string;
+}
+
+// Initialize logs directory
+(async () => {
     try {
-        await fs.mkdir(LOG_DIR, { recursive: true });
-    } catch (e) {
-        console.error("Failed to create log directory", e);
+        await fs.mkdir(LOGS_DIR, { recursive: true });
+    } catch (err) {
+        console.error('Error creating logs directory:', err);
+    }
+})();
+
+export const appendLog = async (entry: LogEntry) => {
+    try {
+        // Use hierarchical path: Task/Component/Part/Year/Month/Day
+        // Default to "General" task and "Unknown" component if not provided
+        const task = entry.taskName || "General";
+        const component = entry.component || "Unknown";
+        const part = entry.partId || "General";
+
+        const filePath = await getLogFilePath(task, component, part, new Date(entry.timestamp));
+
+        const logLine = JSON.stringify(entry) + '\n';
+        await fs.appendFile(filePath, logLine, 'utf8');
+        return true;
+    } catch (error) {
+        console.error('Error appending log:', error);
+        return false;
     }
 };
 
-/**
- * Append a log entry to the JSONL file.
- * The entry is stored as a single line of JSON for fast appends.
- */
-export const appendLog = async (log: Record<string, any>) => {
-    await ensureLogDir();
-    const line = JSON.stringify({ ...log, time: new Date().toISOString() }) + "\n";
-    await fs.appendFile(LOG_FILE, line, "utf8");
-};
-
-/**
- * Read logs with optional pagination.
- * Returns an array of parsed objects.
- */
-export const readLogs = async (options: { offset?: number; limit?: number } = {}) => {
-    const { offset = 0, limit = 100 } = options;
-    try {
-        const data = await fs.readFile(LOG_FILE, "utf8");
-        const lines = data.trim().split(/\n/);
-        const sliced = lines.slice(offset, offset + limit);
-        return sliced.map((l) => JSON.parse(l));
-    } catch (e) {
-        // If file doesn't exist yet, return empty array
-        if ((e as any).code === "ENOENT") return [];
-        console.error("Error reading logs", e);
-        return [];
+export const readLogs = async (
+    filter?: {
+        component?: string;
+        user?: string;
+        startDate?: string;
+        endDate?: string;
+        limit?: number;
+        offset?: number;
     }
+): Promise<{ logs: LogEntry[], total: number }> => {
+    // NOTE: For a file-based system, reading ALL logs across all folders is expensive.
+    // For this implementation, we will scan the 'logs' directory recursively.
+    // In a real production system, this should be replaced by a database query.
+
+    const allLogs: LogEntry[] = [];
+
+    async function scanDir(dir: string) {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                await scanDir(fullPath);
+            } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+                const content = await fs.readFile(fullPath, 'utf8');
+                const lines = content.split('\n');
+                for (const line of lines) {
+                    if (line.trim()) {
+                        try {
+                            allLogs.push(JSON.parse(line));
+                        } catch (e) {
+                            // ignore malformed lines
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    try {
+        await scanDir(LOGS_DIR);
+    } catch (error) {
+        console.error("Error scanning logs directory:", error);
+        return { logs: [], total: 0 };
+    }
+
+    // Sort by timestamp descending
+    allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    // Apply filters
+    let filtered = allLogs;
+    if (filter) {
+        if (filter.component) {
+            filtered = filtered.filter(l => l.component.toLowerCase().includes(filter.component!.toLowerCase()));
+        }
+        if (filter.user) {
+            filtered = filtered.filter(l => l.user.toLowerCase().includes(filter.user!.toLowerCase()));
+        }
+        if (filter.startDate) {
+            filtered = filtered.filter(l => new Date(l.timestamp) >= new Date(filter.startDate!));
+        }
+        if (filter.endDate) {
+            filtered = filtered.filter(l => new Date(l.timestamp) <= new Date(filter.endDate!));
+        }
+    }
+
+    const total = filtered.length;
+    const limit = filter?.limit || 50;
+    const offset = filter?.offset || 0;
+
+    return {
+        logs: filtered.slice(offset, offset + limit),
+        total
+    };
 };
