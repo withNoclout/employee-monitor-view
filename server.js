@@ -101,7 +101,11 @@ app.get('/api/train/metrics', (req, res) => {
         const lines = logContent.split('\n');
         const metrics = [];
         const progressPrefix = '[PROGRESS]';
+        let isTrainingComplete = false;
         for (const line of lines) {
+            if (line.includes('[TRAINING_COMPLETE]')) {
+                isTrainingComplete = true;
+            }
             if (line.includes(progressPrefix)) {
                 try {
                     const jsonStr = line.split(progressPrefix)[1];
@@ -128,7 +132,7 @@ app.get('/api/train/metrics', (req, res) => {
                 }
             }
         }
-        res.json({ metrics });
+        res.json({ metrics, isTrainingComplete });
     } catch (err) {
         console.error('Error parsing training metrics:', err);
         res.status(500).json({ error: 'Failed to parse metrics' });
@@ -357,6 +361,27 @@ app.post('/api/train', (req, res) => {
 
     pythonProcess.stdout.pipe(logStream);
     pythonProcess.stderr.pipe(logStream);
+
+    // Concise logging to server console
+    pythonProcess.stdout.on('data', (data) => {
+        const lines = data.toString().split('\n');
+        for (const line of lines) {
+            if (line.includes('[PROGRESS]')) {
+                try {
+                    const jsonStr = line.split('[PROGRESS]')[1];
+                    const metrics = JSON.parse(jsonStr);
+
+                    if (metrics.type === 'epoch_end') {
+                        console.log(`[Training] Epoch ${metrics.epoch}/${metrics.total_epochs} - Loss: ${metrics.total_loss.toFixed(4)}`);
+                    } else if (metrics.type === 'validation') {
+                        console.log(`[Training] Validation - mAP50: ${(metrics.mAP50 * 100).toFixed(1)}%, mAP50-95: ${(metrics.mAP50_95 * 100).toFixed(1)}%`);
+                    }
+                } catch (e) {
+                    // Ignore parsing errors for partial lines
+                }
+            }
+        }
+    });
 
     pythonProcess.on('error', (err) => {
         console.error('[API] Failed to start subprocess:', err);

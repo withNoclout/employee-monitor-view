@@ -90,6 +90,11 @@ const Training = () => {
           const newMetrics = data.metrics || [];
           setMetrics(newMetrics);
 
+          if (data.isTrainingComplete) {
+            setIsTraining(false);
+            toast.success("Training completed successfully!");
+          }
+
           if (newMetrics.length > 0) {
             const last = newMetrics[newMetrics.length - 1];
             if (last.mAP50 !== undefined) setMAP50(last.mAP50);
