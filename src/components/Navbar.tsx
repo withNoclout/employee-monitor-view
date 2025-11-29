@@ -1,17 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-} from "@/components/ui/dropdown-menu";
-import { LogOut, Menu, X, Megaphone, Bell, Ticket, Settings, Sun, Moon, Monitor, Globe, Zap, Clock, Lock, User } from "lucide-react";
+import { LogOut, Menu, X, Megaphone, Bell, Ticket, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useNavigate } from "react-router-dom";
@@ -41,6 +31,14 @@ export const Navbar = () => {
       description: "You have been successfully logged out",
     });
     navigate("/login");
+  };
+
+  const toggleTheme = () => {
+    if (theme === "light") {
+      setTheme("dark");
+    } else {
+      setTheme("light");
+    }
   };
 
   return (
@@ -131,102 +129,20 @@ export const Navbar = () => {
             {/* Divider */}
             <div className="h-8 w-px bg-border/50" />
 
-            {/* Settings Dropdown */}
-            <DropdownMenu>
-              <Button
-                variant="outline"
-                size="sm"
-                className="hover:bg-muted transition-all shadow-sm w-10 h-10 p-0"
-                title="Settings"
-                asChild
-              >
-                <div>
-                  <Settings className="w-4 h-4" />
-                </div>
-              </Button>
-              <DropdownMenuContent 
-                align="end" 
-                className="w-72 bg-card border-border shadow-industrial-lg z-50"
-              >
-                <DropdownMenuLabel className="text-base font-bold">Settings</DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-border/50" />
-                
-                {/* Theme Selection - FUNCTIONAL */}
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="cursor-pointer">
-                    <Sun className="w-4 h-4 mr-2" />
-                    <span className="font-medium">Theme</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="bg-card border-border shadow-industrial z-50">
-                    <DropdownMenuItem 
-                      onClick={() => setTheme("light")}
-                      className={`cursor-pointer ${theme === "light" ? "bg-primary/10 text-primary" : ""}`}
-                    >
-                      <Sun className="w-4 h-4 mr-2" />
-                      Light
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => setTheme("dark")}
-                      className={`cursor-pointer ${theme === "dark" ? "bg-primary/10 text-primary" : ""}`}
-                    >
-                      <Moon className="w-4 h-4 mr-2" />
-                      Dark
-                    </DropdownMenuItem>
-                    <DropdownMenuItem 
-                      onClick={() => setTheme("system")}
-                      className={`cursor-pointer ${theme === "system" ? "bg-primary/10 text-primary" : ""}`}
-                    >
-                      <Monitor className="w-4 h-4 mr-2" />
-                      System
-                    </DropdownMenuItem>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-
-                <DropdownMenuSeparator className="bg-border/50" />
-
-                {/* Account Settings - Placeholder */}
-                <DropdownMenuItem className="cursor-pointer">
-                  <User className="w-4 h-4 mr-2" />
-                  <span className="font-medium">Account Settings</span>
-                </DropdownMenuItem>
-
-                {/* Language - Placeholder */}
-                <DropdownMenuItem className="cursor-pointer">
-                  <Globe className="w-4 h-4 mr-2" />
-                  <span className="font-medium">Language</span>
-                  <span className="ml-auto text-xs text-muted-foreground">English</span>
-                </DropdownMenuItem>
-
-                {/* Display Preferences - Placeholder */}
-                <DropdownMenuItem className="cursor-pointer">
-                  <Zap className="w-4 h-4 mr-2" />
-                  <span className="font-medium">Display Density</span>
-                  <span className="ml-auto text-xs text-muted-foreground">Comfortable</span>
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator className="bg-border/50" />
-
-                {/* Session Settings - Placeholder */}
-                <DropdownMenuItem className="cursor-pointer">
-                  <Clock className="w-4 h-4 mr-2" />
-                  <span className="font-medium">Session Timeout</span>
-                  <span className="ml-auto text-xs text-muted-foreground">5 min</span>
-                </DropdownMenuItem>
-
-                {/* Security - Placeholder */}
-                <DropdownMenuItem className="cursor-pointer">
-                  <Lock className="w-4 h-4 mr-2" />
-                  <span className="font-medium">Security & Privacy</span>
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator className="bg-border/50" />
-
-                {/* About */}
-                <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                  NextXO Monitor v1.0.0
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Theme Toggle */}
+            <Button
+              onClick={toggleTheme}
+              variant="outline"
+              size="sm"
+              className="hover:bg-muted transition-all shadow-sm w-10 h-10 p-0"
+              title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {theme === "dark" ? (
+                <Sun className="w-4 h-4" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </Button>
             
             <Button
               onClick={handleLogout}
@@ -301,13 +217,23 @@ export const Navbar = () => {
               </Button>
             </div>
 
-            {/* Settings */}
+            {/* Theme Toggle */}
             <Button
+              onClick={toggleTheme}
               variant="outline"
               className="w-full flex items-center justify-center gap-2 hover:bg-muted transition-all"
             >
-              <Settings className="w-4 h-4" />
-              Settings
+              {theme === "dark" ? (
+                <>
+                  <Sun className="w-4 h-4" />
+                  Light Mode
+                </>
+              ) : (
+                <>
+                  <Moon className="w-4 h-4" />
+                  Dark Mode
+                </>
+              )}
             </Button>
               
             <Button
