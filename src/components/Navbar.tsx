@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { LogOut, Menu, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { LogOut, Menu, X, Megaphone, Bell, Ticket } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
@@ -61,7 +62,7 @@ export const Navbar = () => {
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-3">
             <div className={`px-4 py-2 rounded-lg bg-muted/30 border border-border/30 transition-all duration-300 ${
               scrolled ? "opacity-100" : "opacity-0"
             }`}>
@@ -69,6 +70,54 @@ export const Navbar = () => {
                 Real-time Monitoring
               </p>
             </div>
+
+            {/* Divider */}
+            <div className="h-8 w-px bg-border/50" />
+            
+            {/* Icon Buttons */}
+            <div className="flex items-center gap-2">
+              {/* Announcements */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="relative hover:bg-primary/10 hover:text-primary hover:border-primary/50 transition-all shadow-sm w-10 h-10 p-0"
+                title="Announcements"
+              >
+                <Megaphone className="w-4 h-4" />
+                <Badge className="absolute -top-1 -right-1 w-4 h-4 p-0 flex items-center justify-center bg-primary text-primary-foreground text-[10px] border-2 border-background">
+                  3
+                </Badge>
+              </Button>
+
+              {/* Alerts */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="relative hover:bg-warning/10 hover:text-warning hover:border-warning/50 transition-all shadow-sm w-10 h-10 p-0"
+                title="Alerts"
+              >
+                <Bell className="w-4 h-4" />
+                <Badge className="absolute -top-1 -right-1 w-4 h-4 p-0 flex items-center justify-center bg-warning text-warning-foreground text-[10px] border-2 border-background">
+                  5
+                </Badge>
+              </Button>
+
+              {/* Tickets */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="relative hover:bg-accent/10 hover:text-accent hover:border-accent/50 transition-all shadow-sm w-10 h-10 p-0"
+                title="Tickets"
+              >
+                <Ticket className="w-4 h-4" />
+                <Badge className="absolute -top-1 -right-1 w-4 h-4 p-0 flex items-center justify-center bg-accent text-accent-foreground text-[10px] border-2 border-background">
+                  2
+                </Badge>
+              </Button>
+            </div>
+
+            {/* Divider */}
+            <div className="h-8 w-px bg-border/50" />
             
             <Button
               onClick={handleLogout}
@@ -102,6 +151,45 @@ export const Navbar = () => {
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   Real-time Monitoring
                 </p>
+              </div>
+
+              {/* Mobile Icon Buttons */}
+              <div className="grid grid-cols-3 gap-2">
+                {/* Announcements */}
+                <Button
+                  variant="outline"
+                  className="relative flex flex-col items-center gap-1 h-auto py-3 hover:bg-primary/10 hover:text-primary hover:border-primary/50 transition-all"
+                >
+                  <Megaphone className="w-5 h-5" />
+                  <span className="text-xs font-medium">Announcements</span>
+                  <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center bg-primary text-primary-foreground text-[10px]">
+                    3
+                  </Badge>
+                </Button>
+
+                {/* Alerts */}
+                <Button
+                  variant="outline"
+                  className="relative flex flex-col items-center gap-1 h-auto py-3 hover:bg-warning/10 hover:text-warning hover:border-warning/50 transition-all"
+                >
+                  <Bell className="w-5 h-5" />
+                  <span className="text-xs font-medium">Alerts</span>
+                  <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center bg-warning text-warning-foreground text-[10px]">
+                    5
+                  </Badge>
+                </Button>
+
+                {/* Tickets */}
+                <Button
+                  variant="outline"
+                  className="relative flex flex-col items-center gap-1 h-auto py-3 hover:bg-accent/10 hover:text-accent hover:border-accent/50 transition-all"
+                >
+                  <Ticket className="w-5 h-5" />
+                  <span className="text-xs font-medium">Tickets</span>
+                  <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center bg-accent text-accent-foreground text-[10px]">
+                    2
+                  </Badge>
+                </Button>
               </div>
               
               <Button
