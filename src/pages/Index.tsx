@@ -8,12 +8,25 @@ import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { SystemStatus } from "@/components/SystemStatus";
 import { QuickActions } from "@/components/QuickActions";
 import { Navbar } from "@/components/Navbar";
+import { DepartmentOverview } from "@/components/DepartmentOverview";
+import { EmployeeDetailView } from "@/components/EmployeeDetailView";
 
 const Index = () => {
+  // View state: 'overview' or specific department ID
+  const [currentView, setCurrentView] = useState<string>("overview");
+
   // Live Data State
   const [activeEmployees, setActiveEmployees] = useState(12);
   const [avgPerformance, setAvgPerformance] = useState(90);
   const [complianceRate, setComplianceRate] = useState(97);
+
+  const handleDepartmentClick = (departmentId: string) => {
+    setCurrentView(departmentId);
+  };
+
+  const handleBackToOverview = () => {
+    setCurrentView("overview");
+  };
 
   // Active Employees Logic (Every 1 min)
   useEffect(() => {
@@ -143,28 +156,30 @@ const Index = () => {
             <div className="w-1.5 h-10 gradient-primary rounded-full shadow-glow" />
             <div>
               <h2 className="text-2xl font-bold text-foreground tracking-tight">
-                Employee Monitoring Panel
+                {currentView === "overview" ? "Department Overview" : "Employee Monitoring"}
               </h2>
               <p className="text-sm text-muted-foreground font-medium">
-                Real-time monitoring with live camera feeds and performance tracking
+                {currentView === "overview" 
+                  ? "Select a department to view detailed employee monitoring"
+                  : "Real-time monitoring with live camera feeds and performance tracking"
+                }
               </p>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {employees.map((employee, index) => (
-            <div
-              key={employee.id}
-              className="animate-fade-in-up"
-              style={{ animationDelay: `${index * 0.1}s` }}
-            >
-              <EmployeeCard {...employee} />
-            </div>
-          ))}
-        </div>
+        {/* Conditional rendering based on view */}
+        {currentView === "overview" ? (
+          <DepartmentOverview onDepartmentClick={handleDepartmentClick} />
+        ) : (
+          <EmployeeDetailView 
+            departmentId={currentView} 
+            onBack={handleBackToOverview}
+          />
+        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
           <div className="lg:col-span-2">
             <ActivityTimeline />
           </div>
