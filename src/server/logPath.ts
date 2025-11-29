@@ -1,6 +1,9 @@
-// src/server/logPath.ts
 import path from "path";
 import { promises as fs } from "fs";
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Build a hierarchical path for storing logs.
@@ -21,6 +24,7 @@ export const getLogFilePath = async (
     const month = String(date.getMonth() + 1).padStart(2, "0"); // months are 0-indexed
     const day = String(date.getDate()).padStart(2, "0");
 
+    // Navigate up from src/server to project root, then into logs
     const dir = path.resolve(
         __dirname,
         "../../logs",

@@ -9,6 +9,7 @@ import Training from "./pages/Training";
 import BuildWI from "./pages/BuildWI";
 import ManageTeam from "./pages/ManageTeam";
 import TrainModel from "./pages/TrainModel";
+import Annotate from "./pages/Annotate";
 import ViewLog from "./pages/ViewLog";
 import NotFound from "./pages/NotFound";
 
