@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import * as handPoseDetection from '@tensorflow-models/hand-pose-detection';
+import { useActivityLog } from "@/hooks/useActivityLog";
 
 // Employee data
 const employeeData: Record<string, { name: string; position: string; status: string }> = {
@@ -18,6 +19,8 @@ const employeeData: Record<string, { name: string; position: string; status: str
   "emp-005": { name: "Lisa Anderson", position: "DevOps Engineer", status: "good" },
   "emp-006": { name: "David Martinez", position: "Backend Developer", status: "excellent" },
 };
+
+
 
 interface WIStep {
   id: string;
@@ -103,7 +106,7 @@ const saveTasks = (employeeId: string, tasks: Task[]) => {
 // Generate task ID based on type and date
 const generateTaskId = (wiId: string, type: string, frequency: string): { id: string; dateKey: string | undefined } => {
   const today = getTodayKey();
-  
+
   if (frequency === 'Daily') {
     // Daily tasks get a date-specific ID
     return { id: `task-${wiId}-${today}`, dateKey: today };
@@ -117,7 +120,7 @@ const generateTaskId = (wiId: string, type: string, frequency: string): { id: st
     const monthKey = new Date().toISOString().slice(0, 7); // "2025-11"
     return { id: `task-${wiId}-${monthKey}`, dateKey: monthKey };
   }
-  
+
   // One-time or other tasks just use wiId
   return { id: `task-${wiId}`, dateKey: undefined };
 };
@@ -125,6 +128,7 @@ const generateTaskId = (wiId: string, type: string, frequency: string): { id: st
 const Monitor = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { addActivity } = useActivityLog();
   const [isLive, setIsLive] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -652,7 +656,7 @@ const Monitor = () => {
       const apiTime = Date.now() - apiStartTime;
       console.log(`[Test] API response time: ${apiTime}ms`);
       console.log(`[Test] DTW result:`, result);
-      
+
       // Clear message immediately before showing result
       setTestMessage(null);
 
@@ -708,19 +712,19 @@ const Monitor = () => {
 
     try {
       const video = videoRef.current;
-      
+
       // Calculate focus area (center rectangle)
       const focusWidth = Math.floor(video.videoWidth * FOCUS_AREA.widthRatio);
       const focusHeight = Math.floor(video.videoHeight * FOCUS_AREA.heightRatio);
       const focusX = Math.floor((video.videoWidth - focusWidth) / 2);
       const focusY = Math.floor((video.videoHeight - focusHeight) / 2);
-      
+
       // Create canvas to capture ONLY the focus area
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = focusWidth;
       tempCanvas.height = focusHeight;
       const tempCtx = tempCanvas.getContext('2d');
-      
+
       if (!tempCtx) throw new Error("Could not create canvas context");
 
       // Capture only the focus area (center rectangle)
@@ -750,14 +754,14 @@ const Monitor = () => {
           .join(', ');
         setTestComponentResult(detected);
         toast.success(`Found in focus area: ${detected}`);
-        
+
         // Store detections with adjusted coordinates (relative to full frame)
         const video = videoRef.current!;
         const focusWidth = Math.floor(video.videoWidth * FOCUS_AREA.widthRatio);
         const focusHeight = Math.floor(video.videoHeight * FOCUS_AREA.heightRatio);
         const focusX = Math.floor((video.videoWidth - focusWidth) / 2);
         const focusY = Math.floor((video.videoHeight - focusHeight) / 2);
-        
+
         const adjustedDetections = result.detections.map((det: any) => ({
           ...det,
           bbox: {
@@ -811,7 +815,7 @@ const Monitor = () => {
   }, [workInstructions]);
 
   // NOTE: Auto-verify useEffect removed - matching is now handled directly in performGestureVerification()
-  
+
   // Reset step verification states - FULL reset (for moving to next step)
   const resetStepVerification = useCallback(() => {
     setSpeechVerified(false);
@@ -863,22 +867,22 @@ const Monitor = () => {
     const requiredGestureId = currentStep?.gestureId;
     const requiredSpeechPhrase = currentStep?.speechPhrase;
     const requiredComponentId = currentStep?.componentId;
-    
+
     // Get required gesture info
-    const requiredGesture = requiredGestureId 
-      ? trainedGestures.find(g => g.id === requiredGestureId) 
+    const requiredGesture = requiredGestureId
+      ? trainedGestures.find(g => g.id === requiredGestureId)
       : null;
-    
+
     // Get required component info
     const requiredComponent = requiredComponentId
       ? trainedComponents[parseInt(requiredComponentId) - 1]
       : null;
 
-    console.log('[StepVerify] Starting parallel verification...', { 
+    console.log('[StepVerify] Starting parallel verification...', {
       requiredGesture: requiredGesture?.name || 'none',
       requiredSpeech: requiredSpeechPhrase || 'none',
       requiredComponent: requiredComponent || 'none',
-      stepIndex: stepIndex 
+      stepIndex: stepIndex
     });
 
     // Reset all verification states for this step
@@ -976,10 +980,10 @@ const Monitor = () => {
 
       // Phase 5: Classify gesture with DTW
       setTestMessage("Analyzing gesture...");
-      
+
       if (recordedFrameCount >= 10) {
         gestureResult = await classifyGestureDTW(testGestureFramesRef.current);
-        
+
         // Immediately update UI if gesture matched
         if (gestureResult && requiredGesture) {
           const detectedNorm = normalizeGestureName(gestureResult.gesture);
@@ -1009,11 +1013,11 @@ const Monitor = () => {
       // Phase 7: Check results - use ref for current speech text!
       const capturedSpeechText = spokenTextRef.current;
       console.log(`[StepVerify] Captured speech: "${capturedSpeechText}"`);
-      
+
       // Check gesture match
       if (gestureResult) {
         setCurrentGesture(gestureResult.gesture);
-        
+
         if (requiredGesture) {
           const detectedNorm = normalizeGestureName(gestureResult.gesture);
           const requiredNorm = normalizeGestureName(requiredGesture.name);
@@ -1054,14 +1058,14 @@ const Monitor = () => {
       const totalVerified = [gestureMatched && requiredGesture, speechMatched && requiredSpeechPhrase, componentMatched && requiredComponent].filter(Boolean).length;
 
       // Phase 8: Show combined result
-      const gestureStatus = requiredGesture 
+      const gestureStatus = requiredGesture
         ? (gestureMatched ? `✅ Gesture: ${gestureResult?.gesture}` : `❌ Gesture: ${gestureResult?.gesture || 'none'} (need ${requiredGesture.name})`)
         : null;
-      
+
       const speechStatus = requiredSpeechPhrase
         ? (speechMatched ? `✅ Speech: OK` : `❌ Speech: "${capturedSpeechText || 'nothing'}"`)
         : null;
-      
+
       const componentStatus = requiredComponent
         ? (componentMatched ? `✅ Component: ${lockedComponent}` : `❌ Component: ${lockedComponent || 'none'} (need ${requiredComponent})`)
         : null;
@@ -1101,7 +1105,7 @@ const Monitor = () => {
       setTestGestureResult(`Error: ${err.message}`);
       toast.error(err.message);
       setTimeout(() => setTestGestureResult(null), 3000);
-      
+
       // Make sure to stop speech recognition on error
       if (recognitionRef.current && isListening) {
         isListeningRef.current = false;
@@ -1131,7 +1135,7 @@ const Monitor = () => {
 
     // Use ref to get CURRENT step index (avoids stale closure)
     const currentIdx = currentStepIndexRef.current;
-    
+
     if (currentIdx < totalSteps - 1) {
       const nextStepIndex = currentIdx + 1;
       setCurrentStepIndex(nextStepIndex);
@@ -1153,28 +1157,38 @@ const Monitor = () => {
         recognitionRef.current.stop();
         setIsListening(false);
       }
-      
+
       const completedAt = new Date().toISOString();
-      
+
       setTasks(prev => {
         const updatedTasks = prev.map(t =>
           t.id === selectedTask.id
             ? { ...t, status: 'completed' as const, completedSteps: totalSteps, completedAt, employeeId: id }
             : t
         );
-        
+
         // Save to localStorage immediately
         if (id) {
           saveTasks(id, updatedTasks);
         }
-        
+
         return updatedTasks;
       });
-      
+
+      // Log activity
+      if (employee) {
+        addActivity({
+          title: `${employee.name} completed ${selectedTask.title}`,
+          type: "success",
+          employeeName: employee.name,
+          taskType: selectedTask.frequency === 'Daily' ? 'daily' : selectedTask.frequency === 'Monthly' ? 'monthly' : 'system'
+        });
+      }
+
       setSelectedTask(prev => prev ? { ...prev, status: 'completed', completedSteps: totalSteps, completedAt } : null);
       toast.success("🎉 Task Completed Successfully!");
     }
-  }, [selectedTask, workInstructions, currentStepIndex, resetStepVerification, startStepCountdown, isListening, id]);
+  }, [selectedTask, workInstructions, currentStepIndex, resetStepVerification, startStepCountdown, isListening, id, employee, addActivity]);
 
   // Check if current step requirements are met and lock gesture/component on first high-confidence match
   const checkStepVerification = useCallback((gesture: string | null, gestureConfidence: number, components: Detection[]) => {
@@ -1361,7 +1375,7 @@ const Monitor = () => {
         }
 
         // Component Detection - ONLY run when explicitly testing or verifying step with component requirement
-        const stepRequiresComponent = isVerifying && !lockedComponent && 
+        const stepRequiresComponent = isVerifying && !lockedComponent &&
           selectedTask && getStepsForTask(selectedTask)[currentStepIndex]?.componentId;
         const shouldDetectComponent = (isComponentDetectionActive || stepRequiresComponent) && !lockedComponent;
 
@@ -1407,7 +1421,7 @@ const Monitor = () => {
                   const now = Date.now();
                   setTrackedDetections(prev => {
                     const updated = new Map(prev);
-                    
+
                     // Process each detection and add votes
                     adjustedDetections.forEach((det: Detection) => {
                       if (det.confidence >= VOTE_MIN_CONFIDENCE) {
@@ -1435,7 +1449,7 @@ const Monitor = () => {
                         }
                       }
                     });
-                    
+
                     // Decay votes for classes not seen in this frame
                     const detectedClasses = new Set(adjustedDetections.map((d: Detection) => d.class));
                     updated.forEach((tracked, className) => {
@@ -1456,7 +1470,7 @@ const Monitor = () => {
                         }
                       }
                     });
-                    
+
                     return updated;
                   });
 
@@ -1513,18 +1527,18 @@ const Monitor = () => {
           ctx.strokeRect(x1, y1, boxWidth, boxHeight);
 
           // Draw label background
-          const label = isConfirmed 
-            ? `✓ ${className}` 
+          const label = isConfirmed
+            ? `✓ ${className}`
             : `${className} (${tracked.votes}/${VOTE_THRESHOLD})`;
           ctx.font = 'bold 14px Arial';
           const textWidth = ctx.measureText(label).width;
           const labelHeight = 20;
           const labelY = y1 > labelHeight + 5 ? y1 - labelHeight - 2 : y1 + boxHeight + 2;
-          
+
           // Background for label
           ctx.fillStyle = isConfirmed ? 'rgba(34, 197, 94, 0.9)' : 'rgba(245, 158, 11, 0.9)';
           ctx.fillRect(x1, labelY, textWidth + 8, labelHeight);
-          
+
           // Label text
           ctx.fillStyle = '#ffffff';
           ctx.fillText(label, x1 + 4, labelY + 15);
@@ -1533,11 +1547,11 @@ const Monitor = () => {
           if (!isConfirmed && tracked.votes > 0) {
             const progressBarHeight = 4;
             const progressBarY = y2 + 4;
-            
+
             // Background
             ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
             ctx.fillRect(x1, progressBarY, boxWidth, progressBarHeight);
-            
+
             // Progress
             ctx.fillStyle = '#f59e0b'; // amber
             ctx.fillRect(x1, progressBarY, boxWidth * voteProgress, progressBarHeight);
@@ -1549,7 +1563,7 @@ const Monitor = () => {
           // Skip if already tracked with enough votes
           const tracked = trackedDetections.get(det.class);
           if (tracked && tracked.votes >= 2) return; // Already being tracked well
-          
+
           if (det.confidence >= VOTE_MIN_CONFIDENCE && det.confidence < 0.5) {
             const x1 = det.bbox.x1 * canvas.width;
             const y1 = det.bbox.y1 * canvas.height;
@@ -1562,7 +1576,7 @@ const Monitor = () => {
             ctx.setLineDash([4, 4]);
             ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
             ctx.setLineDash([]);
-            
+
             // Small label
             ctx.fillStyle = 'rgba(156, 163, 175, 0.7)';
             ctx.font = '11px Arial';
@@ -1597,7 +1611,7 @@ const Monitor = () => {
 
     const savedWIs = localStorage.getItem('saved_work_instructions');
     const teamsData = localStorage.getItem('teams_data');
-    
+
     // Load previously saved task states for this employee
     const savedTasks = loadSavedTasks(id);
     const savedTaskMap = new Map(savedTasks.map(t => [t.id, t]));
@@ -1622,10 +1636,10 @@ const Monitor = () => {
         if (assignedWI) {
           const frequency = (assignedWI as any).frequency || 'Daily';
           const { id: taskId, dateKey } = generateTaskId(assignedWI.id, 'routine', frequency);
-          
+
           // Check if we have saved state for this task
           const savedState = savedTaskMap.get(taskId);
-          
+
           taskList.push({
             id: taskId,
             wiId: assignedWI.id,
@@ -1646,7 +1660,7 @@ const Monitor = () => {
       // Monthly calibration task
       const { id: calibrationId, dateKey: calibrationDateKey } = generateTaskId('calibration', 'calibration', 'Monthly');
       const savedCalibration = savedTaskMap.get(calibrationId);
-      
+
       taskList.push({
         id: calibrationId,
         wiId: '',
@@ -1666,7 +1680,7 @@ const Monitor = () => {
         if (wi.id !== assignedWIId) {
           const { id: availableId } = generateTaskId(wi.id, 'one-time', 'As Needed');
           const savedAvailable = savedTaskMap.get(availableId);
-          
+
           taskList.push({
             id: availableId,
             wiId: wi.id,
@@ -1684,13 +1698,13 @@ const Monitor = () => {
       });
 
       setTasks(taskList);
-      
+
       // Save the merged task list
       saveTasks(id, taskList);
     } else {
       const { id: calibrationId, dateKey: calibrationDateKey } = generateTaskId('calibration', 'calibration', 'Monthly');
       const savedCalibration = savedTaskMap.get(calibrationId);
-      
+
       const defaultTasks = [{
         id: calibrationId,
         wiId: '',
@@ -1705,7 +1719,7 @@ const Monitor = () => {
         completedAt: savedCalibration?.completedAt,
         employeeId: id
       }];
-      
+
       setTasks(defaultTasks);
       saveTasks(id, defaultTasks);
     }
@@ -2257,7 +2271,7 @@ const Monitor = () => {
                                 {tracked.class}
                               </span>
                               <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div 
+                                <div
                                   className={`h-full transition-all ${tracked.confirmed ? 'bg-green-500' : 'bg-orange-500'}`}
                                   style={{ width: `${Math.min(tracked.votes / VOTE_THRESHOLD * 100, 100)}%` }}
                                 />
