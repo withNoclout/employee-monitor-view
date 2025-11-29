@@ -32,8 +32,10 @@ const upload = multer({ dest: 'uploads/' });
 
 // Ensure directories exist
 const YOLO_WORKFLOW_DIR = path.join(__dirname, 'yolo_workflow');
-const RAW_DATA_DIR = path.join(YOLO_WORKFLOW_DIR, 'raw_data');
 const CLASSES_FILE = path.join(YOLO_WORKFLOW_DIR, 'classes.txt');
+const TRAINED_CLASSES_FILE = path.join(YOLO_WORKFLOW_DIR, 'trained_classes.txt');
+const RAW_DATA_DIR = path.join(YOLO_WORKFLOW_DIR, 'raw_data');
+const TRAINED_MODEL_PATH = path.join(YOLO_WORKFLOW_DIR, 'runs', 'custom_model', 'weights', 'best.pt');
 
 // Gesture workflow directories
 const GESTURE_WORKFLOW_DIR = path.join(__dirname, 'gesture_workflow');
@@ -139,6 +141,51 @@ app.get('/api/train/metrics', (req, res) => {
     }
 });
 
+// Serve training results static files
+app.use('/api/training-results', express.static(path.join(__dirname, 'yolo_workflow/runs/custom_model')));
+
+app.get('/api/train/summary', (req, res) => {
+    try {
+        const resultsPath = path.join(__dirname, 'yolo_workflow/runs/custom_model/results.csv');
+        if (!fs.existsSync(resultsPath)) {
+            return res.status(404).json({ error: 'Results not found' });
+        }
+
+        const content = fs.readFileSync(resultsPath, 'utf-8');
+        const lines = content.trim().split('\n');
+
+        if (lines.length < 2) {
+            return res.status(400).json({ error: 'No data in results file' });
+        }
+
+        // Parse header to find column indices
+        const headers = lines[0].split(',').map(h => h.trim());
+        const lastLine = lines[lines.length - 1].split(',').map(v => v.trim());
+
+        // Helper to get value by partial header match
+        const getValue = (search) => {
+            const index = headers.findIndex(h => h.includes(search));
+            return index !== -1 ? parseFloat(lastLine[index]) : 0;
+        };
+
+        const summary = {
+            precision: getValue('metrics/precision(B)'),
+            recall: getValue('metrics/recall(B)'),
+            mAP50: getValue('metrics/mAP50(B)'),
+            mAP50_95: getValue('metrics/mAP50-95(B)'),
+            box_loss: getValue('train/box_loss'),
+            cls_loss: getValue('train/cls_loss'),
+            dfl_loss: getValue('train/dfl_loss'),
+            epoch: parseInt(lastLine[0])
+        };
+
+        res.json(summary);
+    } catch (err) {
+        console.error('Error fetching training summary:', err);
+        res.status(500).json({ error: 'Failed to fetch summary' });
+    }
+});
+
 // --- End Log Service Endpoints ---
 
 app.post('/api/save-dataset', upload.single('dataset'), (req, res) => {
@@ -184,12 +231,44 @@ app.post('/api/save-dataset', upload.single('dataset'), (req, res) => {
             console.warn('Warning: Could not delete uploaded file:', cleanupError);
         }
 
+        // Extract unique labels from the new annotations
+        const newLabels = new Set();
+        const annotationsFile = path.join(batchDir, 'dataset', 'annotations.json');
+
+        if (fs.existsSync(annotationsFile)) {
+            try {
+                const datasetData = JSON.parse(fs.readFileSync(annotationsFile, 'utf-8'));
+                datasetData.forEach(item => {
+                    if (item.annotations) {
+                        item.annotations.forEach(ann => {
+                            if (ann.label) newLabels.add(ann.label);
+                        });
+                    }
+                });
+            } catch (e) {
+                console.error("Error reading annotations.json:", e);
+            }
+        }
+
+        // Update trained_classes.txt: Remove classes that have new data
+        if (newLabels.size > 0 && fs.existsSync(TRAINED_CLASSES_FILE)) {
+            const trainedClasses = fs.readFileSync(TRAINED_CLASSES_FILE, 'utf-8')
+                .split('\n')
+                .map(c => c.trim())
+                .filter(c => c);
+
+            const updatedTrainedClasses = trainedClasses.filter(c => !newLabels.has(c));
+
+            if (updatedTrainedClasses.length !== trainedClasses.length) {
+                fs.writeFileSync(TRAINED_CLASSES_FILE, updatedTrainedClasses.join('\n'));
+                console.log(`[API] Updated trained classes. Removed: ${[...newLabels].filter(l => trainedClasses.includes(l)).join(', ')}`);
+            }
+        }
+
         res.json({ message: 'Dataset saved and processed successfully', batch: batchName });
     } catch (error) {
         console.error('Error processing zip:', error);
-        // If we have a batchDir but failed, we might want to clean it up? 
-        // For now, keep it for debugging.
-        res.status(500).send('Error processing dataset: ' + error.message);
+        res.status(500).json({ error: 'Failed to process dataset' });
     }
 });
 
@@ -243,7 +322,6 @@ function updateClassesAndLabels(batchDir) {
 
 app.get('/api/classes', (req, res) => {
     try {
-        const classes = [];
         if (fs.existsSync(CLASSES_FILE)) {
             const classNames = fs.readFileSync(CLASSES_FILE, 'utf-8')
                 .split('\n')
@@ -276,17 +354,26 @@ app.get('/api/classes', (req, res) => {
                 });
             }
 
-            classNames.forEach((name, index) => {
-                classes.push({
-                    id: index.toString(),
-                    name: name,
-                    count: counts[index],
-                    isTrained: false, // Default for now
-                    includeInTraining: true
-                });
-            });
+            // Check which classes are actually trained
+            let trainedClasses = [];
+            if (fs.existsSync(TRAINED_MODEL_PATH) && fs.existsSync(TRAINED_CLASSES_FILE)) {
+                trainedClasses = fs.readFileSync(TRAINED_CLASSES_FILE, 'utf-8')
+                    .split('\n')
+                    .map(c => c.trim())
+                    .filter(c => c);
+            }
+
+            const classesWithStats = classNames.map((name, index) => ({
+                id: index.toString(),
+                name,
+                count: counts[index],
+                isTrained: trainedClasses.includes(name)
+            }));
+
+            res.json(classesWithStats);
+        } else {
+            res.json([]);
         }
-        res.json(classes);
     } catch (error) {
         console.error('Error fetching classes:', error);
         res.status(500).send('Error fetching classes');
@@ -955,3 +1042,141 @@ app.post('/api/gestures/classify', async (req, res) => {
 app.use('/gesture-models', express.static(path.join(__dirname, 'gesture_workflow', 'models')));
 
 
+// Delete class and associated data
+app.delete('/api/classes/:className', (req, res) => {
+    try {
+        const className = req.params.className;
+        if (!fs.existsSync(CLASSES_FILE)) {
+            return res.status(404).json({ error: 'Classes file not found' });
+        }
+
+        let classes = fs.readFileSync(CLASSES_FILE, 'utf-8')
+            .split('\n')
+            .map(c => c.trim())
+            .filter(c => c);
+
+        const classIndex = classes.indexOf(className);
+        if (classIndex === -1) {
+            return res.status(404).json({ error: 'Class not found' });
+        }
+
+        // Remove class from classes.txt
+        classes.splice(classIndex, 1);
+        fs.writeFileSync(CLASSES_FILE, classes.join('\n'));
+
+        // Remove from trained_classes.txt if present
+        if (fs.existsSync(TRAINED_CLASSES_FILE)) {
+            let trainedClasses = fs.readFileSync(TRAINED_CLASSES_FILE, 'utf-8')
+                .split('\n')
+                .map(c => c.trim())
+                .filter(c => c);
+
+            const newTrainedClasses = trainedClasses.filter(c => c !== className);
+            if (newTrainedClasses.length !== trainedClasses.length) {
+                fs.writeFileSync(TRAINED_CLASSES_FILE, newTrainedClasses.join('\n'));
+            }
+        }
+
+        // Process all label files in raw_data
+        let deletedImagesCount = 0;
+
+        // Helper to recursively find all .txt files
+        function processDirectory(dir) {
+            const files = fs.readdirSync(dir);
+
+            files.forEach(file => {
+                const filePath = path.join(dir, file);
+                const stat = fs.statSync(filePath);
+
+                if (stat.isDirectory()) {
+                    processDirectory(filePath);
+                } else if (file.endsWith('.txt')) {
+                    // It's a label file
+                    let content = fs.readFileSync(filePath, 'utf-8');
+                    let lines = content.split('\n').filter(l => l.trim());
+                    let newLines = [];
+                    let hasChanges = false;
+                    let remainingLabels = 0;
+
+                    lines.forEach(line => {
+                        const parts = line.trim().split(' ');
+                        const clsId = parseInt(parts[0]);
+
+                        if (isNaN(clsId)) return; // Skip invalid lines
+
+                        if (clsId === classIndex) {
+                            // This is the deleted class - remove it
+                            hasChanges = true;
+                        } else if (clsId > classIndex) {
+                            // Shift ID down
+                            parts[0] = (clsId - 1).toString();
+                            newLines.push(parts.join(' '));
+                            hasChanges = true;
+                            remainingLabels++;
+                        } else {
+                            // Keep as is
+                            newLines.push(line);
+                            remainingLabels++;
+                        }
+                    });
+
+                    if (hasChanges) {
+                        if (remainingLabels === 0) {
+                            // No labels left, delete label file AND image
+                            fs.unlinkSync(filePath);
+
+                            // Try to find and delete the corresponding image
+                            // Assuming image has same basename and is in ../images/ or same dir
+                            const imageExts = ['.jpg', '.jpeg', '.png'];
+                            const baseName = path.basename(file, '.txt');
+                            const dirName = path.dirname(filePath);
+
+                            // Check same dir
+                            let imageDeleted = false;
+                            for (const ext of imageExts) {
+                                const imgPath = path.join(dirName, baseName + ext);
+                                if (fs.existsSync(imgPath)) {
+                                    fs.unlinkSync(imgPath);
+                                    imageDeleted = true;
+                                    break;
+                                }
+                            }
+
+                            // Check ../images/ dir (standard YOLO structure)
+                            if (!imageDeleted) {
+                                const parentDir = path.dirname(dirName);
+                                const imagesDir = path.join(parentDir, 'images');
+                                if (fs.existsSync(imagesDir)) {
+                                    for (const ext of imageExts) {
+                                        const imgPath = path.join(imagesDir, baseName + ext);
+                                        if (fs.existsSync(imgPath)) {
+                                            fs.unlinkSync(imgPath);
+                                            imageDeleted = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            deletedImagesCount++;
+                        } else {
+                            // Update label file with shifted IDs
+                            fs.writeFileSync(filePath, newLines.join('\n'));
+                        }
+                    }
+                }
+            });
+        }
+
+        if (fs.existsSync(RAW_DATA_DIR)) {
+            processDirectory(RAW_DATA_DIR);
+        }
+
+        console.log(`[API] Deleted class '${className}'. Removed ${deletedImagesCount} images.`);
+        res.json({ success: true, message: `Class deleted. ${deletedImagesCount} images removed.` });
+
+    } catch (error) {
+        console.error('Error deleting class:', error);
+        res.status(500).json({ error: error.message });
+    }
+});

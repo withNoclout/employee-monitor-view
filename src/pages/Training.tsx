@@ -1,10 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer, AlertTriangle } from "lucide-react";
+import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer, AlertTriangle, FileText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ImageAnnotator } from "@/components/ImageAnnotator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import * as tf from '@tensorflow/tfjs';
 import * as handPoseDetection from '@tensorflow-models/hand-pose-detection';
@@ -16,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TrainingSummaryDialog } from "@/components/TrainingSummaryDialog";
 
 interface ClassInfo {
   id: string;
@@ -64,8 +66,18 @@ const Training = () => {
   const [totalEpochs, setTotalEpochs] = useState(100);
   const [loss, setLoss] = useState<number | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState("cnn");
+  const [activeTab, setActiveTab] = useState<'cnn' | 'knn'>('cnn');
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [cnnInputMode, setCnnInputMode] = useState<'upload' | 'camera' | 'multicam'>('upload');
+  const [capturedImages, setCapturedImages] = useState<string[]>([]);
+  const cnnVideoRef = useRef<HTMLVideoElement>(null);
+  const [multiCamCount, setMultiCamCount] = useState(5);
+  const [isMultiCamCapturing, setIsMultiCamCapturing] = useState(false);
+  const [multiCamProgress, setMultiCamProgress] = useState(0);
+  const [multiCamCountdown, setMultiCamCountdown] = useState<number | null>(null);
+  const [showSummaryDialog, setShowSummaryDialog] = useState(false);
+  const [summaryMetrics, setSummaryMetrics] = useState<any>(null);
+  const [isFlashing, setIsFlashing] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const detectorRef = useRef<handPoseDetection.HandDetector | null>(null);
@@ -92,7 +104,20 @@ const Training = () => {
 
           if (data.isTrainingComplete) {
             setIsTraining(false);
+            fetchClasses();
             toast.success("Training completed successfully!");
+
+            // Fetch summary
+            try {
+              const summaryRes = await fetch('http://localhost:3000/api/train/summary');
+              if (summaryRes.ok) {
+                const summaryData = await summaryRes.json();
+                setSummaryMetrics(summaryData);
+                setShowSummaryDialog(true);
+              }
+            } catch (e) {
+              console.error("Failed to fetch summary", e);
+            }
           }
 
           if (newMetrics.length > 0) {
@@ -181,30 +206,31 @@ const Training = () => {
   const [trainingData, setTrainingData] = useState<{ embedding: tf.Tensor; label: string }[]>([]);
 
   // Fetch object detection classes
-  useEffect(() => {
-    const fetchClasses = async () => {
-      try {
-        const response = await fetch('http://localhost:3000/api/classes');
-        if (response.ok) {
-          const serverClasses = await response.json();
-          setClasses(prevClasses => {
-            return serverClasses.map((sc: any) => {
-              const existing = prevClasses.find(pc => pc.name === sc.name);
-              return {
-                ...sc,
-                isTrained: existing ? existing.isTrained : sc.isTrained,
-                includeInTraining: existing ? existing.includeInTraining : sc.includeInTraining
-              };
-            });
+  const fetchClasses = useCallback(async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/classes');
+      if (response.ok) {
+        const serverClasses = await response.json();
+        setClasses(prevClasses => {
+          return serverClasses.map((sc: any) => {
+            const existing = prevClasses.find(pc => pc.name === sc.name);
+            return {
+              ...sc,
+              // Always use server's isTrained status
+              isTrained: sc.isTrained,
+              includeInTraining: existing ? existing.includeInTraining : sc.includeInTraining
+            };
           });
-        }
-      } catch (error) {
-        console.error("Failed to fetch classes from server:", error);
+        });
       }
-    };
-
-    fetchClasses();
+    } catch (error) {
+      console.error("Failed to fetch classes from server:", error);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchClasses();
+  }, [fetchClasses]);
 
   // Fetch gesture classes from server
   const fetchGestureClasses = async () => {
@@ -445,6 +471,7 @@ const Training = () => {
       setIsTraining(false);
       setIsAnnotating(false);
       setUploadedImages([]);
+      setCapturedImages([]); // Clear captured images after saving
     }
   };
 
@@ -1005,6 +1032,18 @@ const Training = () => {
               if (isGesture) {
                 fetchGestureModelInfo();
                 fetchGestureClasses();
+              } else {
+                // Fetch summary for CNN training
+                try {
+                  const summaryRes = await fetch('http://localhost:3000/api/train/summary');
+                  if (summaryRes.ok) {
+                    const summaryData = await summaryRes.json();
+                    setSummaryMetrics(summaryData);
+                    setShowSummaryDialog(true);
+                  }
+                } catch (e) {
+                  console.error("Failed to fetch summary", e);
+                }
               }
               setIsTraining(false);
               return;
@@ -1211,14 +1250,32 @@ const Training = () => {
     };
   }, [activeTab, isAnnotating]);
 
-  const [cnnInputMode, setCnnInputMode] = useState<'upload' | 'camera'>('upload');
-  const cnnVideoRef = useRef<HTMLVideoElement>(null);
+  const handleNavigateToLabel = useCallback((imagesToProcess?: string[]) => {
+    const images = imagesToProcess || capturedImages;
+    if (images.length > 0) {
+      const files = images.map((dataUrl, index) => {
+        const byteString = atob(dataUrl.split(',')[1]);
+        const mimeString = dataUrl.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        return new File([ab], `capture-${Date.now()}-${index}.png`, { type: mimeString });
+      });
+      setUploadedImages(files);
+      setIsAnnotating(true);
+      setCapturedImages([]); // Clear captured images after passing to annotator
+    } else {
+      toast.warning("No images captured to label.");
+    }
+  }, [capturedImages]);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
 
     const startCnnWebcam = async () => {
-      if (activeTab === 'cnn' && cnnInputMode === 'camera' && !isAnnotating) {
+      if (activeTab === 'cnn' && (cnnInputMode === 'camera' || cnnInputMode === 'multicam') && !isAnnotating) {
         try {
           stream = await navigator.mediaDevices.getUserMedia({ video: true });
           if (cnnVideoRef.current) {
@@ -1227,6 +1284,11 @@ const Training = () => {
         } catch (err) {
           console.error("Error accessing webcam:", err);
           toast.error("Could not access webcam");
+        }
+      } else {
+        if (cnnVideoRef.current && cnnVideoRef.current.srcObject) {
+          (cnnVideoRef.current.srcObject as MediaStream).getTracks().forEach(track => track.stop());
+          cnnVideoRef.current.srcObject = null;
         }
       }
     };
@@ -1283,21 +1345,52 @@ const Training = () => {
 
   const captureCnnImage = () => {
     if (cnnVideoRef.current) {
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = cnnVideoRef.current.videoWidth;
       canvas.height = cnnVideoRef.current.videoHeight;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.drawImage(cnnVideoRef.current, 0, 0);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const file = new File([blob], `capture-${Date.now()}.png`, { type: "image/png" });
-            setUploadedImages([file]);
-            setIsAnnotating(true);
-          }
-        }, 'image/png');
+      }
+    };
+  };
+
+  const startMultiCamCapture = async () => {
+    if (!cnnVideoRef.current) return;
+    setIsMultiCamCapturing(true);
+    setMultiCamProgress(0);
+    const localCapturedImages: string[] = [];
+
+    for (let i = 0; i < multiCamCount; i++) {
+      // 3 second countdown
+      for (let c = 3; c > 0; c--) {
+        setMultiCamCountdown(c);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      setMultiCamCountdown(null);
+
+      // Capture
+      if (cnnVideoRef.current) {
+        const canvas = document.createElement("canvas");
+        canvas.width = cnnVideoRef.current.videoWidth;
+        canvas.height = cnnVideoRef.current.videoHeight;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(cnnVideoRef.current, 0, 0);
+          const dataUrl = canvas.toDataURL("image/png");
+          localCapturedImages.push(dataUrl);
+          setCapturedImages(prev => [...prev, dataUrl]);
+          setMultiCamProgress(i + 1);
+
+          // Flash effect
+          setIsFlashing(true);
+          setTimeout(() => setIsFlashing(false), 150);
+        }
       }
     }
+
+    setIsMultiCamCapturing(false);
+    handleNavigateToLabel(localCapturedImages);
   };
 
   return (
@@ -1318,6 +1411,28 @@ const Training = () => {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={async () => {
+                try {
+                  const summaryRes = await fetch('http://localhost:3000/api/train/summary');
+                  if (summaryRes.ok) {
+                    const summaryData = await summaryRes.json();
+                    setSummaryMetrics(summaryData);
+                    setShowSummaryDialog(true);
+                  } else {
+                    toast.error("No training results found");
+                  }
+                } catch (e) {
+                  toast.error("Failed to fetch summary");
+                }
+              }}
+            >
+              <FileText className="w-4 h-4" />
+              View Report
+            </Button>
             <div className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg shadow-sm">
               {isModelLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -1331,6 +1446,12 @@ const Training = () => {
           </div>
         </div>
       </div>
+
+      <TrainingSummaryDialog
+        isOpen={showSummaryDialog}
+        onClose={() => setShowSummaryDialog(false)}
+        metrics={summaryMetrics}
+      />
 
       {isAnnotating ? (
         <ImageAnnotator
@@ -1498,6 +1619,15 @@ const Training = () => {
                         <Camera className="w-3.5 h-3.5 mr-2" />
                         Camera
                       </Button>
+                      <Button
+                        variant={cnnInputMode === 'multicam' ? 'secondary' : 'ghost'}
+                        size="sm"
+                        onClick={() => setCnnInputMode('multicam')}
+                        className="h-8 font-bold uppercase text-xs shadow-sm"
+                      >
+                        <Timer className="w-3.5 h-3.5 mr-2" />
+                        Multi-Cam
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -1523,7 +1653,7 @@ const Training = () => {
                         Select Files
                       </Button>
                     </div>
-                  ) : (
+                  ) : cnnInputMode === 'camera' ? (
                     <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border-2 border-border/40 shadow-industrial-lg">
                       <video
                         ref={cnnVideoRef}
@@ -1541,6 +1671,59 @@ const Training = () => {
                           <Camera className="w-5 h-5 mr-2" />
                           Capture & Label
                         </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    // Multi-Cam Mode
+                    <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border-2 border-border/40 shadow-industrial-lg">
+                      <video
+                        ref={cnnVideoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                      />
+
+                      {/* Overlay for Countdown */}
+                      {multiCamCountdown !== null && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm">
+                          <div className="text-9xl font-bold text-white animate-pulse">{multiCamCountdown}</div>
+                        </div>
+                      )}
+
+                      {/* Flash Overlay */}
+                      <div
+                        className={`absolute inset-0 bg-white z-30 pointer-events-none transition-opacity duration-150 ${isFlashing ? 'opacity-100' : 'opacity-0'}`}
+                      />
+
+                      <div className="absolute bottom-6 left-0 right-0 flex flex-col items-center justify-center z-10 gap-4">
+                        {!isMultiCamCapturing ? (
+                          <div className="flex items-center gap-4 bg-black/60 p-2 rounded-full backdrop-blur-md border border-white/10">
+                            <span className="text-white text-xs font-bold uppercase ml-3">Count:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="20"
+                              value={multiCamCount}
+                              onChange={(e) => setMultiCamCount(parseInt(e.target.value) || 1)}
+                              className="w-16 h-8 bg-white/10 border border-white/20 rounded-md text-center text-white font-bold focus:outline-none focus:border-primary"
+                            />
+                            <Button
+                              onClick={startMultiCamCapture}
+                              size="lg"
+                              className="rounded-full shadow-industrial-lg glass-effect font-bold uppercase tracking-wide hover:scale-105 transition-transform"
+                            >
+                              <Camera className="w-5 h-5 mr-2" />
+                              Start Sequence
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="bg-black/60 px-6 py-3 rounded-full backdrop-blur-md border border-white/10">
+                            <p className="text-white font-bold uppercase tracking-widest text-sm">
+                              Capturing {multiCamProgress} / {multiCamCount}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
@@ -1673,7 +1856,7 @@ const Training = () => {
                 <CardDescription className="text-[11px] uppercase tracking-widest font-medium">Select model type to train</CardDescription>
               </CardHeader>
               <CardContent className="flex-1 flex flex-col gap-4 pt-4">
-                <Tabs defaultValue="cnn" className="w-full flex-1 flex flex-col" onValueChange={setActiveTab}>
+                <Tabs defaultValue="cnn" className="w-full flex-1 flex flex-col" onValueChange={(val) => setActiveTab(val as 'cnn' | 'knn')}>
                   <TabsList className="grid w-full grid-cols-2 mb-4 bg-muted/30 p-1">
                     <TabsTrigger value="cnn" className="text-xs font-bold uppercase tracking-wider data-[state=active]:bg-background data-[state=active]:shadow-sm">CNN</TabsTrigger>
                     <TabsTrigger value="knn" className="text-xs font-bold uppercase tracking-wider data-[state=active]:bg-background data-[state=active]:shadow-sm">KNN</TabsTrigger>
@@ -1688,38 +1871,54 @@ const Training = () => {
                       </Button>
                     </div>
 
-                    <div className="space-y-2 flex-1 overflow-auto max-h-[300px] pr-2">
+                    <ScrollArea className="h-[300px] pr-2">
                       {classes.map((cls) => (
                         <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors group shadow-sm">
                           <div className="flex items-center gap-3">
                             <div className={`w-2 h-2 rounded-full shadow-sm ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
                             <div>
                               <p className="font-bold text-sm tracking-tight">{cls.name}</p>
-                              <p className="text-[10px] text-muted-foreground uppercase tracking-wider tabular-nums">{cls.count} samples</p>
+                              <span className="text-xs text-muted-foreground font-mono">
+                                {cls.count} samples
+                              </span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[9px] uppercase tracking-wider font-bold">
-                              {cls.isTrained ? "Trained" : "New"}
-                            </Badge>
+                            {cls.isTrained && (
+                              <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px] uppercase">
+                                Trained
+                              </Badge>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
-                              onClick={() => toggleClassTraining(cls.id, false)}
-                              title={cls.includeInTraining ? "Exclude from training" : "Include in training"}
+                              className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (confirm(`Are you sure you want to delete class "${cls.name}"? This may invalidate existing annotations.`)) {
+                                  try {
+                                    const res = await fetch(`http://localhost:3000/api/classes/${cls.name}`, {
+                                      method: 'DELETE'
+                                    });
+                                    if (res.ok) {
+                                      toast.success(`Class "${cls.name}" deleted`);
+                                      fetchClasses();
+                                    } else {
+                                      toast.error("Failed to delete class");
+                                    }
+                                  } catch (err) {
+                                    console.error(err);
+                                    toast.error("Error deleting class");
+                                  }
+                                }
+                              }}
                             >
-                              {cls.includeInTraining ? (
-                                <Eye className="w-3.5 h-3.5 text-primary" />
-                              ) : (
-                                <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />
-                              )}
+                              <Trash2 className="w-3 h-3" />
                             </Button>
                           </div>
                         </div>
                       ))}
-                    </div>
-
+                    </ScrollArea>
                     <div className="pt-4 border-t border-border/30 mt-auto">
                       <Button
                         className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm"
@@ -1857,7 +2056,8 @@ const Training = () => {
             </Card>
           </div>
         </>
-      )}
+      )
+      }
 
       {/* Test Result Dialog */}
       <Dialog open={showTestResultDialog} onOpenChange={setShowTestResultDialog}>
@@ -2006,7 +2206,7 @@ const Training = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 };
 

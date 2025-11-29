@@ -33,7 +33,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
   const [labelInput, setLabelInput] = useState("");
   const [showLabelInput, setShowLabelInput] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDrawing || !startPos) return;
     const pos = getMousePos(e);
-    
+
     const x = Math.min(pos.x, startPos.x);
     const y = Math.min(pos.y, startPos.y);
     const w = Math.abs(pos.x - startPos.x);
@@ -85,7 +85,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
 
   const handleAddLabel = () => {
     if (!labelInput.trim() || !currentBox) return;
-    
+
     const newAnnotation: Annotation = {
       id: Math.random().toString(36).substr(2, 9),
       x: currentBox.x,
@@ -114,6 +114,14 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
   };
 
   const handleSave = async () => {
+    // Check for empty annotations
+    const totalAnnotations = Object.values(annotations).reduce((acc, curr) => acc + curr.length, 0);
+    if (totalAnnotations === 0) {
+      if (!confirm("No annotations found. Do you want to save these as 'Negative Samples' (background images without objects)?")) {
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       const zip = new JSZip();
@@ -152,7 +160,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
             const yCenter = ann.y + ann.height / 2;
             return `${ann.label} ${xCenter.toFixed(6)} ${yCenter.toFixed(6)} ${ann.width.toFixed(6)} ${ann.height.toFixed(6)}`;
           }).join("\n");
-          
+
           const fileNameWithoutExt = file.name.split('.').slice(0, -1).join('.');
           labelsFolder?.file(`${fileNameWithoutExt}.txt`, yoloContent);
         }
@@ -160,7 +168,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
 
       // Generate zip
       const content = await zip.generateAsync({ type: "blob" });
-      
+
       // Send to server
       const formData = new FormData();
       formData.append('dataset', content, 'dataset.zip');
@@ -206,7 +214,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
         {/* Main Image Area */}
         <div className="flex-1 bg-muted/30 rounded-xl border border-border relative flex items-center justify-center overflow-hidden">
           {imageUrls[currentIndex] && (
-            <div 
+            <div
               ref={containerRef}
               className="relative inline-block max-h-full max-w-full select-none"
               onMouseDown={handleMouseDown}
@@ -214,13 +222,13 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
             >
-              <img 
-                src={imageUrls[currentIndex]} 
-                alt="Annotation target" 
+              <img
+                src={imageUrls[currentIndex]}
+                alt="Annotation target"
                 className="max-h-[60vh] object-contain pointer-events-none"
                 draggable={false}
               />
-              
+
               {/* Existing Annotations */}
               {annotations[currentIndex]?.map(ann => (
                 <div
@@ -235,7 +243,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
                 >
                   <div className="absolute -top-6 left-0 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded flex items-center gap-1">
                     {ann.label}
-                    <button 
+                    <button
                       onClick={(e) => { e.stopPropagation(); removeAnnotation(currentIndex, ann.id); }}
                       className="hover:text-destructive-foreground hover:bg-destructive rounded-sm p-0.5"
                     >
@@ -288,7 +296,7 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
             <h3 className="font-semibold mb-2">Current Image</h3>
             <p className="text-sm text-muted-foreground truncate">{images[currentIndex]?.name}</p>
           </div>
-          
+
           <div className="flex-1">
             <h3 className="font-semibold mb-2">Annotations ({annotations[currentIndex]?.length || 0})</h3>
             <ScrollArea className="h-[300px]">
@@ -296,9 +304,9 @@ export const ImageAnnotator = ({ images, onSave, onCancel }: ImageAnnotatorProps
                 {annotations[currentIndex]?.map(ann => (
                   <div key={ann.id} className="flex items-center justify-between p-2 bg-muted rounded text-sm">
                     <span>{ann.label}</span>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-6 w-6 text-muted-foreground hover:text-destructive"
                       onClick={() => removeAnnotation(currentIndex, ann.id)}
                     >
