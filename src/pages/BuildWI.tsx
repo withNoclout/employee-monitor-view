@@ -7,15 +7,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { 
-  ArrowLeft, 
-  Save, 
-  Plus, 
-  Trash2, 
-  Mic, 
-  MicOff, 
-  Play, 
-  CheckCircle2, 
+import {
+  ArrowLeft,
+  Save,
+  Plus,
+  Trash2,
+  Mic,
+  MicOff,
+  Play,
+  CheckCircle2,
   GripVertical,
   Box,
   Hand,
@@ -78,18 +78,18 @@ const BuildWI = () => {
   const [steps, setSteps] = useState<WIStep[]>([]);
   const [wiTitle, setWiTitle] = useState("New Work Instruction");
   const [isLoadingGestures, setIsLoadingGestures] = useState(false);
-  
+
   // Saved Work Instructions
   const [savedWIs, setSavedWIs] = useState<SavedWI[]>([]);
   const [selectedWI, setSelectedWI] = useState<string | null>(null);
-  
+
   // Routine State
   const [frequency, setFrequency] = useState("Daily");
   const [scheduledTime, setScheduledTime] = useState(() => {
     const now = new Date();
     return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   });
-  
+
   // Verification State
   const [verificationText, setVerificationText] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -121,11 +121,11 @@ const BuildWI = () => {
   useEffect(() => {
     // Fetch gestures from server
     fetchGestures();
-    
+
     // Load components from localStorage (shared with Training page)
     const savedComponents = localStorage.getItem('training_classes');
     if (savedComponents) setComponents(JSON.parse(savedComponents));
-    
+
     // Load saved Work Instructions
     loadSavedWIs();
   }, []);
@@ -174,7 +174,7 @@ const BuildWI = () => {
     e.preventDefault();
     const type = e.dataTransfer.getData("type");
     const id = e.dataTransfer.getData("id");
-    
+
     if (type === 'gesture') {
       addStep(id, null);
       toast.success("Added new step with gesture");
@@ -189,7 +189,7 @@ const BuildWI = () => {
   };
 
   const updateStep = (id: string, field: keyof WIStep, value: any) => {
-    setSteps(steps.map(step => 
+    setSteps(steps.map(step =>
       step.id === id ? { ...step, [field]: value } : step
     ));
   };
@@ -218,7 +218,7 @@ const BuildWI = () => {
       toast.error("Please add at least one step");
       return;
     }
-    
+
     const newWI: SavedWI = {
       id: selectedWI || Math.random().toString(36).substr(2, 9),
       title: wiTitle,
@@ -230,7 +230,7 @@ const BuildWI = () => {
     };
 
     let existingWIs = JSON.parse(localStorage.getItem('saved_work_instructions') || '[]');
-    
+
     if (selectedWI) {
       // Update existing
       existingWIs = existingWIs.map((wi: SavedWI) => wi.id === selectedWI ? newWI : wi);
@@ -240,7 +240,7 @@ const BuildWI = () => {
       existingWIs.push(newWI);
       toast.success("Work Instruction saved!");
     }
-    
+
     localStorage.setItem('saved_work_instructions', JSON.stringify(existingWIs));
     setSelectedWI(newWI.id);
     loadSavedWIs(); // Refresh the list
@@ -252,7 +252,7 @@ const BuildWI = () => {
     const filtered = existingWIs.filter((wi: SavedWI) => wi.id !== id);
     localStorage.setItem('saved_work_instructions', JSON.stringify(filtered));
     loadSavedWIs();
-    
+
     if (selectedWI === id) {
       createNewWI();
     }
@@ -264,7 +264,7 @@ const BuildWI = () => {
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-6 h-6" />
           </Button>
           <div>
@@ -302,8 +302,8 @@ const BuildWI = () => {
                 ) : (
                   <div className="space-y-2">
                     {gestures.map(g => (
-                      <div 
-                        key={g.id} 
+                      <div
+                        key={g.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, 'gesture', g.name)}
                         className="p-3 border rounded-lg bg-card hover:bg-accent/50 cursor-grab active:cursor-grabbing transition-colors flex items-center justify-between"
@@ -336,8 +336,8 @@ const BuildWI = () => {
               <ScrollArea className="h-[300px] px-4 pb-4">
                 <div className="space-y-2">
                   {components.map(c => (
-                    <div 
-                      key={c.id} 
+                    <div
+                      key={c.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, 'component', c.id)}
                       className="p-3 border rounded-lg bg-card hover:bg-accent/50 cursor-grab active:cursor-grabbing transition-colors flex items-center justify-between"
@@ -369,14 +369,14 @@ const BuildWI = () => {
               <div className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-muted-foreground">Instruction Title</label>
-                  <Input 
-                    value={wiTitle} 
+                  <Input
+                    value={wiTitle}
                     onChange={(e) => setWiTitle(e.target.value)}
                     className="text-lg font-semibold"
                     placeholder="Instruction Title"
                   />
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-muted-foreground">Frequency</label>
@@ -394,16 +394,16 @@ const BuildWI = () => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-muted-foreground">Scheduled Time</label>
-                    <Input 
-                      type="time" 
-                      value={scheduledTime} 
+                    <Input
+                      type="time"
+                      value={scheduledTime}
                       onChange={(e) => setScheduledTime(e.target.value)}
                     />
                   </div>
                 </div>
               </div>
             </CardHeader>
-            <CardContent 
+            <CardContent
               className="flex-1 bg-muted/10 p-6 transition-colors data-[drag-active=true]:bg-primary/5"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -419,14 +419,14 @@ const BuildWI = () => {
                         <div className="w-0.5 flex-1 bg-border my-2" />
                       )}
                     </div>
-                    
+
                     <Card className="flex-1 mb-4">
                       <CardContent className="p-4 space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <label className="text-xs font-medium text-muted-foreground">Action (Gesture)</label>
-                            <Select 
-                              value={step.gestureId || ""} 
+                            <Select
+                              value={step.gestureId || ""}
                               onValueChange={(value) => updateStep(step.id, 'gestureId', value)}
                             >
                               <SelectTrigger>
@@ -441,8 +441,8 @@ const BuildWI = () => {
                           </div>
                           <div className="space-y-2">
                             <label className="text-xs font-medium text-muted-foreground">Target (Component)</label>
-                            <Select 
-                              value={step.componentId || ""} 
+                            <Select
+                              value={step.componentId || ""}
                               onValueChange={(value) => updateStep(step.id, 'componentId', value)}
                             >
                               <SelectTrigger>
@@ -456,7 +456,7 @@ const BuildWI = () => {
                             </Select>
                           </div>
                         </div>
-                        <Input 
+                        <Input
                           placeholder="Step description (e.g., Pick up the CPU carefully)"
                           value={step.description}
                           onChange={(e) => updateStep(step.id, 'description', e.target.value)}
@@ -466,7 +466,7 @@ const BuildWI = () => {
                             <Mic className="w-3 h-3" />
                             Speech Verification Phrase
                           </label>
-                          <Input 
+                          <Input
                             placeholder="What should employee say? (e.g., CPU installed correctly)"
                             value={step.speechPhrase || ""}
                             onChange={(e) => updateStep(step.id, 'speechPhrase', e.target.value)}
@@ -485,7 +485,7 @@ const BuildWI = () => {
                     </Card>
                   </div>
                 ))}
-                
+
                 {steps.length === 0 && (
                   <div className="text-center py-12 border-2 border-dashed rounded-xl pointer-events-none">
                     <p className="text-muted-foreground">Drag items here or click "Add Step" to begin.</p>
@@ -516,13 +516,12 @@ const BuildWI = () => {
               <ScrollArea className="h-[300px] px-4 pb-4">
                 <div className="space-y-2">
                   {savedWIs.map(wi => (
-                    <div 
+                    <div
                       key={wi.id}
-                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selectedWI === wi.id 
-                          ? 'border-primary bg-primary/5' 
+                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${selectedWI === wi.id
+                          ? 'border-primary bg-primary/5'
                           : 'bg-card hover:bg-accent/50'
-                      }`}
+                        }`}
                       onClick={() => loadWI(wi)}
                     >
                       <div className="flex items-start justify-between">
@@ -540,9 +539,9 @@ const BuildWI = () => {
                           </p>
                         </div>
                         <div className="flex gap-1 shrink-0">
-                          <Button 
-                            size="icon" 
-                            variant="ghost" 
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             className="h-6 w-6"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -551,9 +550,9 @@ const BuildWI = () => {
                           >
                             <Edit className="w-3 h-3" />
                           </Button>
-                          <Button 
-                            size="icon" 
-                            variant="ghost" 
+                          <Button
+                            size="icon"
+                            variant="ghost"
                             className="h-6 w-6 text-muted-foreground hover:text-destructive"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -588,8 +587,8 @@ const BuildWI = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium">Operator Response</label>
-                  <Button 
-                    size="sm" 
+                  <Button
+                    size="sm"
                     variant={isListening ? "destructive" : "outline"}
                     className={isListening ? "animate-pulse" : ""}
                     onClick={toggleListening}
@@ -598,7 +597,7 @@ const BuildWI = () => {
                     {isListening ? "Stop" : "Record"}
                   </Button>
                 </div>
-                <Textarea 
+                <Textarea
                   className="min-h-[100px] resize-none"
                   placeholder="Transcribed text will appear here..."
                   value={verificationText}

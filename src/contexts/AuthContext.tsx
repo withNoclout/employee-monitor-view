@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -26,10 +26,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const session = sessionStorage.getItem("auth_session");
     const sessionTime = sessionStorage.getItem("last_activity");
     const storedUser = sessionStorage.getItem("user_data");
-    
+
     if (session && sessionTime && storedUser) {
       const timeSinceActivity = Date.now() - parseInt(sessionTime);
-      
+
       if (timeSinceActivity < SESSION_TIMEOUT) {
         setIsAuthenticated(true);
         setUser(JSON.parse(storedUser));
@@ -42,12 +42,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Monitor session timeout
+  const location = useLocation();
+
+  // Monitor session timeout
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const checkTimeout = setInterval(() => {
+      // If user is on any page other than dashboard, consider them active/busy
+      // This prevents logout during training or monitoring sessions
+      if (location.pathname !== '/') {
+        resetActivityTimer();
+        return;
+      }
+
       const timeSinceActivity = Date.now() - lastActivity;
-      
+
       if (timeSinceActivity >= SESSION_TIMEOUT) {
         logout();
         navigate("/login");
@@ -55,7 +65,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }, 10000); // Check every 10 seconds
 
     return () => clearInterval(checkTimeout);
-  }, [isAuthenticated, lastActivity, navigate]);
+  }, [isAuthenticated, lastActivity, navigate, location.pathname]);
 
   // Track user activity
   useEffect(() => {

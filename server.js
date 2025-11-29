@@ -20,6 +20,10 @@ const PYTHON_PATH = path.join(__dirname, 'venv/bin/python3');
 const TRAIN_SCRIPT = path.join(__dirname, 'yolo_workflow', 'scripts', 'train_model.py');
 const GESTURE_TRAIN_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
 
+// Track active training processes
+let activeTrainingProcess = null;
+let activeGestureTrainingProcess = null;
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
@@ -288,6 +292,7 @@ app.post('/api/train', (req, res) => {
     res.setHeader('Transfer-Encoding', 'chunked');
 
     const pythonProcess = spawn(PYTHON_PATH, [TRAIN_SCRIPT]);
+    activeTrainingProcess = pythonProcess;
 
     pythonProcess.stdout.on('data', (data) => {
         const msg = data.toString();
@@ -302,6 +307,7 @@ app.post('/api/train', (req, res) => {
     });
 
     pythonProcess.on('close', (code) => {
+        activeTrainingProcess = null;
         console.log(`Training process exited with code ${code}`);
         if (code === 0) {
             res.write('\n[TRAINING_COMPLETE]\n');
@@ -310,6 +316,17 @@ app.post('/api/train', (req, res) => {
         }
         res.end();
     });
+});
+
+app.post('/api/train/cancel', (req, res) => {
+    if (activeTrainingProcess) {
+        console.log('Cancelling training process...');
+        activeTrainingProcess.kill();
+        activeTrainingProcess = null;
+        res.json({ message: 'Training cancelled' });
+    } else {
+        res.status(400).json({ message: 'No active training process' });
+    }
 });
 
 app.listen(port, () => {
@@ -608,6 +625,7 @@ app.post('/api/gestures/train', (req, res) => {
     res.setHeader('Transfer-Encoding', 'chunked');
 
     const pythonProcess = spawn(PYTHON_PATH, [GESTURE_TRAIN_SCRIPT, '--train']);
+    activeGestureTrainingProcess = pythonProcess;
 
     pythonProcess.stdout.on('data', (data) => {
         const msg = data.toString();
@@ -622,6 +640,7 @@ app.post('/api/gestures/train', (req, res) => {
     });
 
     pythonProcess.on('close', (code) => {
+        activeGestureTrainingProcess = null;
         console.log(`Gesture training process exited with code ${code}`);
         if (code === 0) {
             res.write('\n[TRAINING_COMPLETE]\n');
@@ -633,6 +652,17 @@ app.post('/api/gestures/train', (req, res) => {
         }
         res.end();
     });
+});
+
+app.post('/api/gestures/train/cancel', (req, res) => {
+    if (activeGestureTrainingProcess) {
+        console.log('Cancelling gesture training process...');
+        activeGestureTrainingProcess.kill();
+        activeGestureTrainingProcess = null;
+        res.json({ message: 'Gesture training cancelled' });
+    } else {
+        res.status(400).json({ message: 'No active gesture training process' });
+    }
 });
 
 // Get gesture model info

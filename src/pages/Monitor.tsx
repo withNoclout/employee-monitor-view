@@ -1830,7 +1830,7 @@ const Monitor = () => {
         <Card className="max-w-md">
           <CardContent className="p-8 text-center">
             <h2 className="text-2xl font-bold mb-2">Employee Not Found</h2>
-            <Button onClick={() => navigate("/")}>
+            <Button onClick={() => navigate(-1)}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
             </Button>
@@ -1849,7 +1849,7 @@ const Monitor = () => {
         <div className="container mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
+              <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>

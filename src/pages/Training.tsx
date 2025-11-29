@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer } from "lucide-react";
+import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer, AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { ImageAnnotator } from "@/components/ImageAnnotator";
@@ -75,7 +75,7 @@ const Training = () => {
   const prevHandsRef = useRef<handPoseDetection.Hand[]>([]);  // Track previous frame for velocity
   const recordingFramesRef = useRef<any[]>([]);  // Store frames during recording
   const recordingStartTimeRef = useRef<number>(0);
-  
+
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
   const [newClassName, setNewClassName] = useState("");
   const [newGestureDuration, setNewGestureDuration] = useState(2); // Default 2 seconds
@@ -140,21 +140,21 @@ const Training = () => {
         if (response.ok) {
           const serverClasses = await response.json();
           setClasses(prevClasses => {
-             return serverClasses.map((sc: any) => {
-                 const existing = prevClasses.find(pc => pc.name === sc.name);
-                 return {
-                     ...sc,
-                     isTrained: existing ? existing.isTrained : sc.isTrained,
-                     includeInTraining: existing ? existing.includeInTraining : sc.includeInTraining
-                 };
-             });
+            return serverClasses.map((sc: any) => {
+              const existing = prevClasses.find(pc => pc.name === sc.name);
+              return {
+                ...sc,
+                isTrained: existing ? existing.isTrained : sc.isTrained,
+                includeInTraining: existing ? existing.includeInTraining : sc.includeInTraining
+              };
+            });
           });
         }
       } catch (error) {
         console.error("Failed to fetch classes from server:", error);
       }
     };
-    
+
     fetchClasses();
   }, []);
 
@@ -166,7 +166,7 @@ const Training = () => {
         fetch('http://localhost:3000/api/gestures/classes'),
         fetch('http://localhost:3000/api/gestures/model')
       ]);
-      
+
       if (classesRes.ok) {
         const serverClasses = await classesRes.json();
         let modelInfo = null;
@@ -174,17 +174,17 @@ const Training = () => {
           modelInfo = await modelRes.json();
           setGestureModelInfo(modelInfo);
         }
-        
+
         // Determine isTrained status based on model info
         const trainedClasses = modelInfo?.trained_classes || [];
         const trainedSampleCounts = modelInfo?.class_sample_counts || {};
-        
+
         setGestureClasses(serverClasses.map((c: any) => {
           const wasTrainedWith = trainedClasses.includes(c.name);
           const trainedCount = trainedSampleCounts[c.name] || 0;
           // Class is trained if it was in training AND no new sequences added since
           const isTrained = wasTrainedWith && c.sequenceCount <= trainedCount;
-          
+
           return {
             ...c,
             includeInTraining: true,
@@ -261,13 +261,13 @@ const Training = () => {
       newModel.add(tf.layers.flatten());
       newModel.add(tf.layers.dense({ units: 64, activation: 'relu' }));
       newModel.add(tf.layers.dense({ units: classes.length, activation: 'softmax' }));
-      
+
       newModel.compile({
         optimizer: 'adam',
         loss: 'categoricalCrossentropy',
         metrics: ['accuracy'],
       });
-      
+
       setModel(newModel);
     } finally {
       setIsModelLoading(false);
@@ -285,7 +285,7 @@ const Training = () => {
     // Normalize class name to avoid duplicates (case-insensitive)
     const normalizedName = className.trim();
     const existingClassIndex = currentClasses.findIndex(c => c.name.toLowerCase() === normalizedName.toLowerCase());
-    
+
     if (existingClassIndex >= 0) {
       // Update existing class
       const updatedClasses = [...currentClasses];
@@ -319,47 +319,47 @@ const Training = () => {
     console.log("Processing dataset:", data);
     const newTrainingData: { embedding: tf.Tensor; label: string }[] = [];
     let newClasses = [...classes];
-    
+
     setIsTraining(true); // Show loading state while processing
 
     try {
       for (const item of data) {
         const img = new Image();
         img.crossOrigin = "anonymous";
-        
+
         // Use the File object if available to create a URL, otherwise fallback to image name (which will likely fail)
         const imgSrc = item.file ? URL.createObjectURL(item.file) : item.image;
         img.src = imgSrc;
 
-        await new Promise((resolve, reject) => { 
-          img.onload = resolve; 
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
           img.onerror = (e) => reject(new Error(`Failed to load image: ${item.image}`));
         });
-        
+
         for (const ann of item.annotations) {
           // Crop and Infer
           try {
             const embedding = tf.tidy(() => {
               const pixels = tf.browser.fromPixels(img);
-              
+
               // Calculate dimensions with clamping
               let x = Math.floor(ann.x * img.width);
               let y = Math.floor(ann.y * img.height);
               let w = Math.floor(ann.width * img.width);
               let h = Math.floor(ann.height * img.height);
-              
+
               // Clamp to image boundaries
               x = Math.max(0, x);
               y = Math.max(0, y);
               w = Math.min(w, img.width - x);
               h = Math.min(h, img.height - y);
-              
+
               // Ensure valid dimensions
               if (w <= 0 || h <= 0) {
-                  console.warn("Invalid crop dimensions after clamping:", { x, y, w, h });
-                  return null;
+                console.warn("Invalid crop dimensions after clamping:", { x, y, w, h });
+                return null;
               }
-              
+
               const cropped = tf.slice(pixels, [y, x, 0], [h, w, 3]);
               // Resize to 224x224 as expected by MobileNet
               const resized = tf.image.resizeBilinear(cropped, [224, 224]);
@@ -375,16 +375,16 @@ const Training = () => {
             // Continue to next annotation
           }
         }
-        
+
         // Clean up object URL
         if (item.file) {
-            URL.revokeObjectURL(imgSrc);
+          URL.revokeObjectURL(imgSrc);
         }
       }
 
       setTrainingData(prev => [...prev, ...newTrainingData]);
       setClasses(newClasses);
-      
+
       if (newTrainingData.length > 0) {
         toast.success(`Processed ${newTrainingData.length} new samples! Model needs retraining.`);
       } else {
@@ -423,7 +423,7 @@ const Training = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: newClassName, duration: newGestureDuration })
         });
-        
+
         if (response.ok) {
           const newGesture = await response.json();
           toast.success(`Gesture "${newClassName}" added`);
@@ -446,11 +446,11 @@ const Training = () => {
 
   const toggleClassTraining = (id: string, isMovement = false) => {
     if (isMovement) {
-      setMovementClasses(movementClasses.map(c => 
+      setMovementClasses(movementClasses.map(c =>
         c.id === id ? { ...c, includeInTraining: !c.includeInTraining } : c
       ));
     } else {
-      setClasses(classes.map(c => 
+      setClasses(classes.map(c =>
         c.id === id ? { ...c, includeInTraining: !c.includeInTraining } : c
       ));
     }
@@ -460,14 +460,14 @@ const Training = () => {
   // Returns { landmarks: [[x,y,z], ...] } or null if no valid data
   const extractHandLandmarks = (hand: handPoseDetection.Hand | null): { landmarks: number[][] } | null => {
     if (!hand || !hand.keypoints || hand.keypoints.length < 21) return null;
-    
+
     const wrist = hand.keypoints[0];
     const landmarks = hand.keypoints.map(kp => [
       (kp.x - wrist.x) / 100,  // Normalize relative to wrist
       (kp.y - wrist.y) / 100,
       (kp as any).z || 0
     ]);
-    
+
     return { landmarks };
   };
 
@@ -478,20 +478,20 @@ const Training = () => {
     currHands: handPoseDetection.Hand[]
   ): number => {
     if (!prevHands || prevHands.length === 0 || currHands.length === 0) return 0;
-    
+
     let totalVelocity = 0;
     let count = 0;
-    
+
     // Try to match hands between frames
     for (const currHand of currHands) {
       // Find matching hand from previous frame (same handedness)
       const prevHand = prevHands.find(h => h.handedness === currHand.handedness);
       if (!prevHand) continue;
-      
+
       // Get wrist positions (keypoint 0)
       const prevWrist = prevHand.keypoints[0];
       const currWrist = currHand.keypoints[0];
-      
+
       if (prevWrist && currWrist) {
         // Calculate distance moved (in pixels, then normalize by typical frame size)
         const dx = (currWrist.x - prevWrist.x) / 640; // Normalize by typical width
@@ -501,7 +501,7 @@ const Training = () => {
         count++;
       }
     }
-    
+
     return count > 0 ? totalVelocity / count : 0;
   };
 
@@ -509,25 +509,25 @@ const Training = () => {
   const resampleFrames = (frames: any[], targetLength: number = 30): any[] => {
     if (frames.length === 0) return [];
     if (frames.length === targetLength) return frames;
-    
+
     const resampled: any[] = [];
-    
+
     for (let i = 0; i < targetLength; i++) {
       // Calculate the position in the original array
       const pos = (i / (targetLength - 1)) * (frames.length - 1);
       const lowerIdx = Math.floor(pos);
       const upperIdx = Math.min(lowerIdx + 1, frames.length - 1);
       const t = pos - lowerIdx; // Interpolation factor (0 to 1)
-      
+
       const lowerFrame = frames[lowerIdx];
       const upperFrame = frames[upperIdx];
-      
+
       // Interpolate landmarks
       const interpolateHand = (lower: any, upper: any) => {
         if (!lower && !upper) return null;
         if (!lower) return upper;
         if (!upper) return lower;
-        
+
         const landmarks = lower.landmarks.map((lm: number[], idx: number) => {
           const ulm = upper.landmarks[idx];
           return [
@@ -536,17 +536,17 @@ const Training = () => {
             lm[2] + (ulm[2] - lm[2]) * t
           ];
         });
-        
+
         return { landmarks };
       };
-      
+
       resampled.push({
         timestamp: i * (1000 / 30), // Normalized timestamps at 30fps
         left_hand: interpolateHand(lowerFrame.left_hand, upperFrame.left_hand),
         right_hand: interpolateHand(lowerFrame.right_hand, upperFrame.right_hand)
       });
     }
-    
+
     return resampled;
   };
 
@@ -567,7 +567,7 @@ const Training = () => {
       toast.error("Please select a gesture class first");
       return;
     }
-    
+
     const gestureClass = gestureClasses.find(c => c.name === selectedGestureClass);
     if (!gestureClass) {
       toast.error("Invalid gesture class");
@@ -576,12 +576,12 @@ const Training = () => {
 
     setIsRecording(true);
     recordingFramesRef.current = [];
-    
+
     // Use the gesture class's duration, fallback to 2 seconds
     const classDuration = gestureClass.duration || 2;
     const RECORDING_DURATION = classDuration * 1000; // Convert to ms
     const FRAME_INTERVAL = 33;       // ~30fps
-    
+
     try {
       // Phase 1: Countdown
       setRecordingMessage("Get Ready...");
@@ -590,7 +590,7 @@ const Training = () => {
         await new Promise(r => setTimeout(r, 1000));
       }
       setCountdown(null);
-      
+
       // Phase 2: Wait for hand to appear
       setRecordingMessage("Show your hand...");
       let waitTimeout = 0;
@@ -600,19 +600,19 @@ const Training = () => {
         if (waitTimeout > 10000) throw new Error("Timeout waiting for hand");
         if (!videoRef.current) throw new Error("Recording interrupted");
       }
-      
+
       // Phase 3: Record for fixed duration
       setRecordingMessage("Recording your gesture...");
       recordingStartTimeRef.current = Date.now();
-      
+
       while (Date.now() - recordingStartTimeRef.current < RECORDING_DURATION) {
         const elapsed = Date.now() - recordingStartTimeRef.current;
         const hands = lastHandsRef.current;
-        
+
         // Extract landmarks
         let leftHand = null;
         let rightHand = null;
-        
+
         if (hands.length > 0) {
           hands.forEach(hand => {
             const handData = extractHandLandmarks(hand);
@@ -620,30 +620,30 @@ const Training = () => {
             else rightHand = handData;
           });
         }
-        
+
         // Record frame (even if no hand - DTW handles missing data)
         recordingFramesRef.current.push({
           timestamp: elapsed,
           left_hand: leftHand,
           right_hand: rightHand
         });
-        
+
         // Update UI
         const progress = Math.round((elapsed / RECORDING_DURATION) * 100);
         setRecordingStep(recordingFramesRef.current.length);
         setRecordingMessage(`Recording... ${progress}% (${recordingFramesRef.current.length} frames)`);
-        
+
         await new Promise(r => setTimeout(r, FRAME_INTERVAL));
         if (!videoRef.current) throw new Error("Recording interrupted");
       }
-      
+
       const frames = recordingFramesRef.current;
-      
+
       if (frames.length < 10) {
         toast.error(`Too few frames captured (${frames.length}).`);
         return;
       }
-      
+
       // Phase 4: Save to server (no resampling - DTW handles variable length)
       setRecordingMessage("Saving sequence...");
       const response = await fetch('http://localhost:3000/api/gestures/sequences', {
@@ -659,7 +659,7 @@ const Training = () => {
           }
         })
       });
-      
+
       if (response.ok) {
         toast.success(`Gesture saved! ${frames.length} frames recorded.`);
         fetchGestureClasses();
@@ -667,7 +667,7 @@ const Training = () => {
         const error = await response.json();
         toast.error(error.error || "Failed to save sequence");
       }
-      
+
     } catch (error: any) {
       console.error("Recording error:", error);
       toast.error(error.message || "Recording failed");
@@ -692,12 +692,12 @@ const Training = () => {
     setTestConfidence(null);
     setTestDetectedGesture(null);
     setTestResult(null);
-    
+
     // Use 3 seconds for testing (universal test duration)
     const TEST_DURATION = 3000;
     const FRAME_INTERVAL = 33;       // ~30fps
     const CONFIDENCE_THRESHOLD = 0.50;
-    
+
     try {
       // Phase 1: Countdown from 3
       for (let c = 3; c > 0; c--) {
@@ -705,7 +705,7 @@ const Training = () => {
         await new Promise(r => setTimeout(r, 1000));
       }
       setTestCountdown(null);
-      
+
       // Phase 2: Wait for hand to appear
       setTestMessage("Show your hand...");
       let waitTimeout = 0;
@@ -715,19 +715,19 @@ const Training = () => {
         if (waitTimeout > 10000) throw new Error("Timeout waiting for hand");
         if (!videoRef.current) throw new Error("Detection interrupted");
       }
-      
+
       // Phase 3: Record for fixed duration
       setTestMessage("Recording your gesture...");
       testStartTimeRef.current = Date.now();
-      
+
       while (Date.now() - testStartTimeRef.current < TEST_DURATION) {
         const elapsed = Date.now() - testStartTimeRef.current;
         const hands = lastHandsRef.current;
-        
+
         // Extract landmarks
         let leftHand = null;
         let rightHand = null;
-        
+
         if (hands.length > 0) {
           hands.forEach(hand => {
             const handData = extractHandLandmarks(hand);
@@ -735,32 +735,32 @@ const Training = () => {
             else rightHand = handData;
           });
         }
-        
+
         // Record frame
         testFramesRef.current.push({
           timestamp: elapsed,
           left_hand: leftHand,
           right_hand: rightHand
         });
-        
+
         // Update UI
         const progress = Math.round((elapsed / TEST_DURATION) * 100);
         setTestDetectedGesture(`Recording... ${progress}%`);
-        
+
         await new Promise(r => setTimeout(r, FRAME_INTERVAL));
         if (!videoRef.current) throw new Error("Detection interrupted");
       }
-      
+
       const recordedFrameCount = testFramesRef.current.length;
-      
+
       if (recordedFrameCount < 10) {
         toast.error(`Too few frames (${recordedFrameCount}).`);
         return;
       }
-      
+
       // Phase 4: Classify with DTW
       setTestMessage("Analyzing gesture with DTW...");
-      
+
       try {
         const response = await fetch('http://localhost:3000/api/gestures/classify', {
           method: 'POST',
@@ -769,17 +769,17 @@ const Training = () => {
             frames: testFramesRef.current
           })
         });
-        
+
         if (response.ok) {
           const result = await response.json();
           const confidence = result.confidence || 0;
           const gesture = result.predicted_class || "Unknown";
           const allProbs = result.all_probs || {};
           const detectionTime = Date.now() - testStartTimeRef.current;
-          
+
           setTestConfidence(confidence);
           setTestDetectedGesture(gesture);
-          
+
           // Store result with all probabilities
           setTestResult({
             gesture: gesture,
@@ -788,16 +788,16 @@ const Training = () => {
             frameCount: recordedFrameCount,
             allProbabilities: allProbs
           });
-          
+
           if (confidence >= CONFIDENCE_THRESHOLD) {
             toast.success(`Detected: ${gesture} (${(confidence * 100).toFixed(1)}%)`);
           } else {
             toast.warning(`Low confidence: ${gesture} (${(confidence * 100).toFixed(1)}%)`);
           }
-          
+
           // Show result dialog
           setTimeout(() => setShowTestResultDialog(true), 100);
-          
+
         } else {
           const error = await response.json();
           toast.error(error.error || "Classification failed");
@@ -806,7 +806,7 @@ const Training = () => {
         console.error("Classification error:", error);
         toast.error("Failed to classify gesture");
       }
-      
+
     } catch (error: any) {
       console.error("Test detection error:", error);
       toast.error(error.message || "Detection failed");
@@ -824,29 +824,29 @@ const Training = () => {
       toast.error("Please select a gesture class first");
       return;
     }
-    
+
     const currentClass = movementClasses.find(c => c.id === selectedClassId);
     const samplesNeeded = (currentClass?.samples || 0) === 0 ? 5 : 1;
 
     setIsRecording(true);
     setRecordingStep(0);
     const recordedFeatures: number[][] = [];
-    
+
     try {
       for (let i = 1; i <= samplesNeeded; i++) {
         setRecordingStep(i);
         setRecordingMessage("Get Ready...");
-        
+
         for (let c = 3; c > 0; c--) {
           setCountdown(c);
           await new Promise(r => setTimeout(r, 1000));
         }
         setCountdown(null);
-        
+
         setRecordingMessage("Show Gesture!");
         while (lastHandsRef.current.length === 0) {
-            await new Promise(r => setTimeout(r, 100));
-            if (!videoRef.current) throw new Error("Recording interrupted");
+          await new Promise(r => setTimeout(r, 100));
+          if (!videoRef.current) throw new Error("Recording interrupted");
         }
 
         setRecordingMessage("Hold Still... Recording!");
@@ -859,20 +859,20 @@ const Training = () => {
           await new Promise(r => setTimeout(r, 100));
           if (!videoRef.current) throw new Error("Recording interrupted");
         }
-        
+
         toast.success(`Sample ${i}/${samplesNeeded}: captured ${recordedFeatures.length} frames`);
-        
+
         if (i < samplesNeeded) {
           setRecordingMessage("Next sample starting...");
           await new Promise(r => setTimeout(r, 1000));
         }
       }
-      
+
       setMovementClasses(prev => prev.map(c => {
         if (c.id === selectedClassId) {
           const existingData = c.data || [];
-          return { 
-            ...c, 
+          return {
+            ...c,
             count: c.count + 1,
             samples: (c.samples || 0) + recordedFeatures.length,
             data: [...existingData, ...recordedFeatures],
@@ -895,252 +895,121 @@ const Training = () => {
     }
   };
 
-  const startTraining = async (isMovement = false) => {
-    if (isMovement) {
-        // Train GRU gesture model via server API
-        if (gestureClasses.length < 2) {
-          toast.error("Need at least 2 gesture classes to train");
-          return;
-        }
-        
-        const totalSequences = gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0);
-        if (totalSequences < 10) {
-          toast.error("Need at least 10 sequences total to train. Record more gestures.");
-          return;
-        }
-        
-        setIsTraining(true);
-        setTrainingProgress(0);
-        setLossHistory([]);
-        setCurrentEpoch(0);
-        setCurrentPhase(1);
-        setPhaseDescription("Training GRU gesture model...");
-        
-        try {
-          toast.info("Starting GRU gesture model training...");
-          
-          const response = await fetch('http://localhost:3000/api/gestures/train', {
-            method: 'POST',
-          });
-
-          if (!response.ok) throw new Error(response.statusText);
-          if (!response.body) throw new Error("No response body");
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let done = false;
-
-          while (!done) {
-            const { value, done: doneReading } = await reader.read();
-            done = doneReading;
-            const chunkValue = decoder.decode(value, { stream: true });
-            
-            // Parse JSON progress messages
-            const lines = chunkValue.split('\n');
-            for (const line of lines) {
-              if (!line.trim()) continue;
-              try {
-                const data = JSON.parse(line);
-                
-                // Handle epoch progress
-                if (data.epoch !== undefined) {
-                  setCurrentEpoch(data.epoch);
-                  setTotalEpochs(data.total_epochs || 100);
-                  setTrainingProgress(data.progress || (data.epoch / (data.total_epochs || 100)) * 100);
-                  if (data.loss !== undefined) setLoss(data.loss);
-                  // Use val_accuracy for display (more meaningful)
-                  if (data.val_accuracy !== undefined) setAccuracy(data.val_accuracy);
-                  else if (data.accuracy !== undefined) setAccuracy(data.accuracy);
-                  if (data.val_loss !== undefined) {
-                    setLossHistory(prev => [...prev, data.val_loss]);
-                  }
-                  // Update phase description with current epoch info
-                  setPhaseDescription(`Epoch ${data.epoch}/${data.total_epochs || 100} - Loss: ${data.loss?.toFixed(4) || '--'}`);
-                }
-                
-                // Handle training complete
-                if (data.final_val_accuracy !== undefined) {
-                  setAccuracy(data.final_val_accuracy);
-                  setTrainingProgress(100);
-                  toast.success(`Training complete! Accuracy: ${(data.final_val_accuracy * 100).toFixed(1)}%`);
-                }
-                
-                if (data.error) {
-                  toast.error(data.message || "Training error");
-                }
-                
-                // Handle training complete message (avoid duplicate toasts)
-                if (data.message === "Training complete!" && data.final_val_accuracy !== undefined) {
-                  setTrainingProgress(100);
-                  setAccuracy(data.final_val_accuracy);
-                  // Toast is already shown in the final_val_accuracy check above
-                }
-              } catch (e) {
-                // Not JSON - check for completion markers
-                if (line.includes('[TRAINING_COMPLETE]')) {
-                  setTrainingProgress(100);
-                } else if (line.includes('[TRAINING_FAILED]')) {
-                  toast.error("Training failed!");
-                } else {
-                  console.log("Training output:", line);
-                }
-              }
-            }
-          }
-          
-          // Refresh model info AND gesture classes (to update badge status)
-          await fetchGestureClasses();
-          
-        } catch (error) {
-          console.error("Error training gesture model:", error);
-          toast.error("Failed to train gesture model");
-        } finally {
-          setIsTraining(false);
-          setPhaseDescription("");
-        }
+  const startTraining = async (isGesture: boolean) => {
+    if (isGesture) {
+      if (gestureClasses.length < 2) {
+        toast.error("Need at least 2 gesture classes to train");
         return;
-    }
+      }
 
-    // Check if we have classes to train
-    const activeClasses = classes.filter(c => c.includeInTraining);
-    if (activeClasses.length === 0) {
-      toast.error("Please select at least one class to train.");
-      return;
+      const totalSequences = gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0);
+      if (totalSequences < 10) {
+        toast.error("Need at least 10 sequences total to train. Record more gestures.");
+        return;
+      }
+    } else {
+      const activeClasses = classes.filter(c => c.includeInTraining);
+      if (activeClasses.length < 2) {
+        toast.error("Need at least 2 classes to train");
+        return;
+      }
     }
 
     setIsTraining(true);
     setTrainingProgress(0);
+    setLoss(null);
+    setAccuracy(null);
     setLossHistory([]);
     setCurrentEpoch(0);
     setCurrentPhase(1);
-    setPhaseDescription("Initializing transfer learning...");
-    setMAP50(null);
-    setMAP50_95(null);
-    
+    setPhaseDescription("Initializing training environment...");
+
     try {
-      toast.info("Starting training with transfer learning...");
-      
-      const response = await fetch('http://localhost:3000/api/train', {
+      const endpoint = isGesture ? 'http://localhost:3000/api/gestures/train' : 'http://localhost:3000/api/train';
+
+      const response = await fetch(endpoint, {
         method: 'POST',
       });
 
-      if (!response.ok) throw new Error(response.statusText);
-      if (!response.body) throw new Error("No response body");
+      if (!response.ok) throw new Error('Failed to start training');
+      if (!response.body) throw new Error('No response body');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let done = false;
-      let fullOutput = "";
 
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
-        done = doneReading;
-        const chunkValue = decoder.decode(value, { stream: true });
-        fullOutput += chunkValue;
-        
-        // Parse JSON progress messages from training script
-        const progressMatches = chunkValue.matchAll(/\[PROGRESS\]({.*?})/g);
-        for (const match of progressMatches) {
-          try {
-            const data = JSON.parse(match[1]);
-            
-            switch (data.type) {
-              case 'train_start':
-                setTotalEpochs(data.total_epochs || 100);
-                toast.info(`Training started: ${data.model}`);
-                break;
-                
-              case 'phase_start':
-                setCurrentPhase(data.phase);
-                setPhaseDescription(data.description);
-                toast.info(`Phase ${data.phase}: ${data.description}`);
-                break;
-                
-              case 'epoch_end':
-                setCurrentEpoch(data.epoch);
-                setTotalEpochs(data.total_epochs);
-                setTrainingProgress(data.progress);
-                setLoss(data.total_loss);
-                // Update loss history for graph
-                if (data.loss_history && data.loss_history.length > 0) {
-                  setLossHistory(data.loss_history);
-                } else if (data.total_loss) {
-                  setLossHistory(prev => [...prev, data.total_loss]);
-                }
-                break;
-                
-              case 'validation':
-                setMAP50(data.mAP50);
-                setMAP50_95(data.mAP50_95);
-                setAccuracy(data.mAP50);
-                break;
-                
-              case 'training_complete':
-                toast.success(data.message || "Training completed successfully!");
-                setTrainingProgress(100);
-                break;
-                
-              case 'error':
-                toast.error(`Training error: ${data.message}`);
-                break;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value);
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          if (line.includes('[TRAINING_COMPLETE]')) {
+            toast.success("Training completed successfully!");
+            if (isGesture) {
+              fetchGestureModelInfo();
+              fetchGestureClasses();
             }
+            setIsTraining(false);
+            return;
+          }
+          if (line.includes('[TRAINING_FAILED]')) {
+            throw new Error("Training process failed");
+          }
+
+          try {
+            // Try to parse JSON progress
+            const data = JSON.parse(line);
+
+            // Handle epoch progress
+            if (data.epoch !== undefined) {
+              setCurrentEpoch(data.epoch);
+              setTotalEpochs(data.total_epochs || 100);
+              setTrainingProgress(data.progress || (data.epoch / (data.total_epochs || 100)) * 100);
+              if (data.loss !== undefined) setLoss(data.loss);
+
+              // Use val_accuracy for display (more meaningful)
+              if (data.val_accuracy !== undefined) setAccuracy(data.val_accuracy);
+              else if (data.accuracy !== undefined) setAccuracy(data.accuracy);
+
+              if (data.val_loss !== undefined) {
+                setLossHistory(prev => [...prev, data.val_loss]);
+              }
+              // Update phase description with current epoch info
+              setPhaseDescription(`Epoch ${data.epoch}/${data.total_epochs || 100} - Loss: ${data.loss?.toFixed(4) || '--'}`);
+            }
+
+            // Handle phase updates (CNN)
+            if (data.phase) {
+              setCurrentPhase(data.phase);
+              setPhaseDescription(data.description || `Phase ${data.phase}`);
+            }
+
+            // Handle metrics (CNN)
+            if (data.metrics) {
+              if (data.metrics.map50 !== undefined) setMAP50(data.metrics.map50);
+              if (data.metrics.map50_95 !== undefined) setMAP50_95(data.metrics.map50_95);
+            }
+
           } catch (e) {
             // Not JSON, ignore
+            console.log("Training log:", line);
           }
         }
-        
-        // Fallback: Parse Epoch progress from YOLO output (old format)
-        const epochMatch = chunkValue.match(/(\d+)\/(\d+)\s+[0-9.]+[GM]/);
-        if (epochMatch && !chunkValue.includes('[PROGRESS]')) {
-            const current = parseInt(epochMatch[1]);
-            const total = parseInt(epochMatch[2]);
-            if (total > 0) {
-                const percent = Math.round((current / total) * 100);
-                setTrainingProgress(percent);
-                setCurrentEpoch(current);
-                setTotalEpochs(total);
-            }
-        }
-        
-        // Fallback: Parse loss values from training output (old format)
-        const lossMatch = chunkValue.match(/(\d+)\/(\d+)\s+[0-9.]+[GM]\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)/);
-        if (lossMatch && !chunkValue.includes('[PROGRESS]')) {
-            const boxLoss = parseFloat(lossMatch[3]);
-            const clsLoss = parseFloat(lossMatch[4]);
-            const dflLoss = parseFloat(lossMatch[5]);
-            const totalLoss = boxLoss + clsLoss + dflLoss;
-            setLoss(totalLoss);
-            setLossHistory(prev => [...prev, totalLoss]);
-        }
-        
-        // Fallback: Parse mAP50 (old format)
-        const mapMatch = chunkValue.match(/all\s+\d+\s+\d+\s+[0-9.]+\s+[0-9.]+\s+([0-9.]+)\s+([0-9.]+)/);
-        if (mapMatch && !chunkValue.includes('[PROGRESS]')) {
-            const mAP50Val = parseFloat(mapMatch[1]);
-            setAccuracy(mAP50Val);
-            setMAP50(mAP50Val);
-        }
-        
-        console.log(chunkValue); // Log progress to console
       }
-
-      if (fullOutput.includes('[TRAINING_COMPLETE]') || fullOutput.includes('training_complete')) {
-        toast.success("Training completed successfully!");
-        setTrainingProgress(100);
-        // Update local state to show classes as trained
-        setClasses(classes.map(c => 
-          c.includeInTraining ? { ...c, isTrained: true } : c
-        ));
-      } else if (!fullOutput.includes('error')) {
-        toast.success("Training finished. Check model results.");
+    } catch (error: any) {
+      console.error("Training error:", error);
+      if (error.name !== 'AbortError') {
+        toast.error(error.message || "Training failed");
       }
-
-    } catch (error) {
-      console.error("Error calling training API:", error);
-      toast.error("Failed to communicate with training server.");
-    } finally {
       setIsTraining(false);
     }
+
+
+
   };
 
   useEffect(() => {
@@ -1162,7 +1031,7 @@ const Training = () => {
         const video = videoRef.current;
         const hands = await detectorRef.current.estimateHands(video);
         lastHandsRef.current = hands;
-        
+
         if (canvasRef.current) {
           const ctx = canvasRef.current.getContext('2d');
           if (ctx) {
@@ -1178,7 +1047,7 @@ const Training = () => {
                 ctx.fillStyle = '#00FF00';
                 ctx.fill();
               });
-              
+
               // Draw skeleton (simplified)
               // You can add more elaborate drawing logic here
             });
@@ -1249,6 +1118,35 @@ const Training = () => {
     };
   }, [activeTab, cnnInputMode, isAnnotating]);
 
+  const handleEmergencyStop = async () => {
+    if (!isTraining) return;
+
+    try {
+      const endpoint = activeTab === 'knn'
+        ? 'http://localhost:3000/api/gestures/train/cancel'
+        : 'http://localhost:3000/api/train/cancel';
+
+      const response = await fetch(endpoint, { method: 'POST' });
+
+      if (response.ok) {
+        toast.error("Training stopped by user (Emergency Stop)");
+        setIsTraining(false);
+      } else {
+        toast.error("Failed to stop training");
+      }
+    } catch (error) {
+      console.error("Error stopping training:", error);
+      toast.error("Failed to connect to server");
+    }
+  };
+
+  const handleBackNavigation = () => {
+    if (isTraining) {
+      handleEmergencyStop();
+    }
+    navigate(-1);
+  };
+
   const captureCnnImage = () => {
     if (cnnVideoRef.current) {
       const canvas = document.createElement('canvas');
@@ -1272,7 +1170,7 @@ const Training = () => {
     <div className="min-h-screen bg-background p-8">
       {/* Header */}
       <div className="mb-8">
-        <Button variant="ghost" onClick={() => navigate("/")} className="mb-4 pl-0 hover:pl-2 transition-all">
+        <Button variant="ghost" onClick={handleBackNavigation} className="mb-4 pl-0 hover:pl-2 transition-all">
           ← Back to Dashboard
         </Button>
         <div className="flex items-center justify-between">
@@ -1301,7 +1199,7 @@ const Training = () => {
       </div>
 
       {isAnnotating ? (
-        <ImageAnnotator 
+        <ImageAnnotator
           images={uploadedImages}
           onSave={handleSaveDataset}
           onCancel={() => {
@@ -1323,8 +1221,8 @@ const Training = () => {
                         {activeTab === 'knn' ? 'Training GRU Model...' : 'Training in Progress...'}
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        {activeTab === 'knn' 
-                          ? `Epoch ${currentEpoch}/${totalEpochs}` 
+                        {activeTab === 'knn'
+                          ? `Epoch ${currentEpoch}/${totalEpochs}`
                           : `Phase ${currentPhase}: ${phaseDescription}`
                         }
                       </p>
@@ -1344,7 +1242,7 @@ const Training = () => {
                     )}
                   </div>
                 </div>
-                
+
                 {/* Progress Bar for GRU, Loss Graph for CNN */}
                 {activeTab === 'knn' ? (
                   <div className="space-y-2">
@@ -1432,8 +1330,8 @@ const Training = () => {
                       {activeTab === 'cnn' ? "Add New Samples" : "Live Camera Feed"}
                     </CardTitle>
                     <CardDescription className="text-xs uppercase tracking-widest text-muted-foreground mt-1">
-                      {activeTab === 'cnn' 
-                        ? "Upload images or capture from webcam to label" 
+                      {activeTab === 'cnn'
+                        ? "Upload images or capture from webcam to label"
                         : "Use your camera to capture movement gestures for training"}
                     </CardDescription>
                   </div>
@@ -1484,17 +1382,17 @@ const Training = () => {
                     </div>
                   ) : (
                     <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border-2 border-border/40 shadow-industrial-lg">
-                      <video 
-                        ref={cnnVideoRef} 
-                        autoPlay 
-                        playsInline 
-                        muted 
+                      <video
+                        ref={cnnVideoRef}
+                        autoPlay
+                        playsInline
+                        muted
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute bottom-6 left-0 right-0 flex justify-center z-10">
-                        <Button 
-                          onClick={captureCnnImage} 
-                          size="lg" 
+                        <Button
+                          onClick={captureCnnImage}
+                          size="lg"
                           className="rounded-full shadow-industrial-lg glass-effect font-bold uppercase tracking-wide hover:scale-105 transition-transform"
                         >
                           <Camera className="w-5 h-5 mr-2" />
@@ -1505,11 +1403,11 @@ const Training = () => {
                   )
                 ) : (
                   <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-border group">
-                    <video 
-                      ref={videoRef} 
-                      autoPlay 
-                      playsInline 
-                      muted 
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
                       className="w-full h-full object-cover"
                     />
                     {!isWebcamActive && (
@@ -1565,9 +1463,8 @@ const Training = () => {
                     {/* Live Confidence Display (top-right during testing) */}
                     {isTesting && testConfidence !== null && (
                       <div className="absolute top-4 left-4 z-30 pointer-events-none">
-                        <div className={`backdrop-blur-md text-white px-4 py-3 rounded-lg border shadow-lg ${
-                          testConfidence >= 0.8 ? 'bg-green-600/80 border-green-400/30' : 'bg-black/60 border-white/10'
-                        }`}>
+                        <div className={`backdrop-blur-md text-white px-4 py-3 rounded-lg border shadow-lg ${testConfidence >= 0.8 ? 'bg-green-600/80 border-green-400/30' : 'bg-black/60 border-white/10'
+                          }`}>
                           <p className="text-[10px] text-zinc-300 uppercase tracking-wider font-bold mb-0.5">Detected Gesture</p>
                           <p className="text-xl font-bold">{testDetectedGesture || "..."}</p>
                           <p className="text-sm mt-1">Confidence: <span className={`font-bold ${testConfidence >= 0.8 ? 'text-green-300' : 'text-yellow-400'}`}>
@@ -1592,33 +1489,33 @@ const Training = () => {
                             );
                           })()}
                           <div className="flex gap-4">
-                            <Button 
-                              size="lg" 
+                            <Button
+                              size="lg"
                               className="pointer-events-auto bg-red-600 hover:bg-red-700 text-white rounded-full px-8 py-6 shadow-lg transform hover:scale-105 transition-all"
                               onClick={startGestureRecording}
                             >
                               <div className="w-4 h-4 bg-white rounded-full mr-2" />
-                              {selectedGestureClass 
-                                ? `Record ${gestureClasses.find(c => c.name === selectedGestureClass)?.duration || 2}s` 
+                              {selectedGestureClass
+                                ? `Record ${gestureClasses.find(c => c.name === selectedGestureClass)?.duration || 2}s`
                                 : "Select Gesture First"}
                             </Button>
                             {gestureModelInfo?.exists && (
-                            <Button 
-                              size="lg" 
-                              className="pointer-events-auto bg-blue-600 hover:bg-blue-700 text-white rounded-full px-8 py-6 shadow-lg transform hover:scale-105 transition-all"
-                              onClick={testGestureDetection}
-                            >
-                              <Target className="w-5 h-5 mr-2" />
-                              Test Gesture
-                            </Button>
-                          )}
+                              <Button
+                                size="lg"
+                                className="pointer-events-auto bg-blue-600 hover:bg-blue-700 text-white rounded-full px-8 py-6 shadow-lg transform hover:scale-105 transition-all"
+                                onClick={testGestureDetection}
+                              >
+                                <Target className="w-5 h-5 mr-2" />
+                                Test Gesture
+                              </Button>
+                            )}
                           </div>
                         </div>
                       )}
                     </div>
 
                     <div className="absolute bottom-4 right-4 flex gap-2 z-10">
-                       <Badge variant="destructive" className="animate-pulse">LIVE</Badge>
+                      <Badge variant="destructive" className="animate-pulse">LIVE</Badge>
                     </div>
                     <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
                   </div>
@@ -1638,7 +1535,7 @@ const Training = () => {
                     <TabsTrigger value="cnn" className="text-xs font-bold uppercase tracking-wider data-[state=active]:bg-background data-[state=active]:shadow-sm">CNN</TabsTrigger>
                     <TabsTrigger value="knn" className="text-xs font-bold uppercase tracking-wider data-[state=active]:bg-background data-[state=active]:shadow-sm">KNN</TabsTrigger>
                   </TabsList>
-                  
+
                   <TabsContent value="cnn" className="flex-1 flex flex-col data-[state=active]:flex">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Object Classes</h3>
@@ -1647,7 +1544,7 @@ const Training = () => {
                         Add
                       </Button>
                     </div>
-                    
+
                     <div className="space-y-2 flex-1 overflow-auto max-h-[300px] pr-2">
                       {classes.map((cls) => (
                         <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors group shadow-sm">
@@ -1681,8 +1578,8 @@ const Training = () => {
                     </div>
 
                     <div className="pt-4 border-t border-border/30 mt-auto">
-                      <Button 
-                        className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm" 
+                      <Button
+                        className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm"
                         onClick={() => startTraining(false)}
                         disabled={isTraining || classes.filter(c => c.includeInTraining).length === 0}
                       >
@@ -1698,6 +1595,15 @@ const Training = () => {
                           </>
                         )}
                       </Button>
+                      {isTraining && activeTab === 'cnn' && (
+                        <Button
+                          className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm mt-2 bg-destructive hover:bg-destructive/90 animate-pulse"
+                          onClick={handleEmergencyStop}
+                        >
+                          <AlertTriangle className="w-4 h-4 mr-2" />
+                          Emergency Stop
+                        </Button>
+                      )}
                       <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-wider tabular-nums">
                         {classes.filter(c => c.includeInTraining).length} classes selected
                       </p>
@@ -1712,7 +1618,7 @@ const Training = () => {
                         Add
                       </Button>
                     </div>
-                    
+
                     {isLoadingGestures ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -1728,13 +1634,12 @@ const Training = () => {
                     ) : (
                       <div className="space-y-2 flex-1 overflow-auto max-h-[300px] pr-2">
                         {gestureClasses.map((cls) => (
-                          <div 
-                            key={cls.id} 
-                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer shadow-sm ${
-                              selectedGestureClass === cls.name 
-                                ? 'border-primary/50 bg-primary/10' 
-                                : 'border-border/40 bg-muted/20 hover:bg-muted/40'
-                            }`}
+                          <div
+                            key={cls.id}
+                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer shadow-sm ${selectedGestureClass === cls.name
+                              ? 'border-primary/50 bg-primary/10'
+                              : 'border-border/40 bg-muted/20 hover:bg-muted/40'
+                              }`}
                             onClick={() => setSelectedGestureClass(cls.name)}
                           >
                             <div className="flex items-center gap-3">
@@ -1771,8 +1676,8 @@ const Training = () => {
                     )}
 
                     <div className="pt-4 border-t border-border/30 mt-auto">
-                      <Button 
-                        className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm" 
+                      <Button
+                        className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm"
                         variant="secondary"
                         onClick={() => startTraining(true)}
                         disabled={isTraining || gestureClasses.length < 2}
@@ -1789,6 +1694,16 @@ const Training = () => {
                           </>
                         )}
                       </Button>
+                      {isTraining && activeTab === 'knn' && (
+                        <Button
+                          className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm mt-2 bg-destructive hover:bg-destructive/90 animate-pulse"
+                          variant="destructive"
+                          onClick={handleEmergencyStop}
+                        >
+                          <AlertTriangle className="w-4 h-4 mr-2" />
+                          Emergency Stop
+                        </Button>
+                      )}
                       <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-wider tabular-nums">
                         {gestureClasses.length} classes • {gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0)} sequences
                       </p>
@@ -1819,7 +1734,7 @@ const Training = () => {
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Detected Gesture</p>
                 <p className="text-2xl font-bold text-primary">{testResult.gesture}</p>
               </div>
-              
+
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-muted rounded-lg p-3 text-center">
                   <div className="flex items-center justify-center mb-1">
@@ -1828,7 +1743,7 @@ const Training = () => {
                   <p className="text-lg font-bold text-green-500">{(testResult.confidence * 100).toFixed(1)}%</p>
                   <p className="text-[10px] text-muted-foreground uppercase">Confidence</p>
                 </div>
-                
+
                 <div className="bg-muted rounded-lg p-3 text-center">
                   <div className="flex items-center justify-center mb-1">
                     <Timer className="w-4 h-4 text-muted-foreground" />
@@ -1836,7 +1751,7 @@ const Training = () => {
                   <p className="text-lg font-bold">{(testResult.detectionTimeMs / 1000).toFixed(2)}s</p>
                   <p className="text-[10px] text-muted-foreground uppercase">Detection Time</p>
                 </div>
-                
+
                 <div className="bg-muted rounded-lg p-3 text-center">
                   <div className="flex items-center justify-center mb-1">
                     <Activity className="w-4 h-4 text-muted-foreground" />
@@ -1849,21 +1764,21 @@ const Training = () => {
               <div className="text-sm text-muted-foreground text-center">
                 <p>Detection speed: ~{Math.round(testResult.detectionTimeMs / testResult.frameCount)}ms per frame</p>
               </div>
-              
+
               {/* All Gesture Probabilities */}
               {testResult.allProbabilities && Object.keys(testResult.allProbabilities).length > 0 && (
                 <div className="mt-4 border-t pt-4">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 text-center">All Predictions</p>
                   <div className="space-y-2">
                     {Object.entries(testResult.allProbabilities)
-                      .sort(([,a], [,b]) => b - a)
+                      .sort(([, a], [, b]) => b - a)
                       .map(([gestureName, prob]) => (
                         <div key={gestureName} className="flex items-center gap-2">
                           <span className={`text-sm font-medium w-24 truncate ${gestureName === testResult.gesture ? 'text-primary' : 'text-muted-foreground'}`}>
                             {gestureName}
                           </span>
                           <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                            <div 
+                            <div
                               className={`h-full rounded-full transition-all ${gestureName === testResult.gesture ? 'bg-primary' : 'bg-muted-foreground/50'}`}
                               style={{ width: `${(prob as number) * 100}%` }}
                             />
@@ -1904,7 +1819,7 @@ const Training = () => {
           <div className="grid gap-4">
             <div>
               <label className="text-sm font-medium mb-1.5 block">Name</label>
-              <Input 
+              <Input
                 placeholder="Enter name..."
                 value={newClassName}
                 onChange={(e) => setNewClassName(e.target.value)}
@@ -1919,11 +1834,10 @@ const Training = () => {
                       key={sec}
                       type="button"
                       onClick={() => setNewGestureDuration(sec)}
-                      className={`flex-1 py-2 rounded-md text-sm font-medium transition-all border ${
-                        newGestureDuration === sec
-                          ? 'bg-primary text-primary-foreground border-primary'
-                          : 'bg-muted hover:bg-muted/80 border-border'
-                      }`}
+                      className={`flex-1 py-2 rounded-md text-sm font-medium transition-all border ${newGestureDuration === sec
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-muted hover:bg-muted/80 border-border'
+                        }`}
                     >
                       {sec}s
                     </button>
@@ -1934,13 +1848,13 @@ const Training = () => {
             )}
           </div>
           <DialogFooter>
-            <Button 
-              variant="secondary" 
+            <Button
+              variant="secondary"
               onClick={() => setIsAddClassOpen(false)}
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleAddClass}
               disabled={!newClassName.trim()}
             >
