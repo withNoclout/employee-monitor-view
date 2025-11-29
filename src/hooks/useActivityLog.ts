@@ -11,6 +11,11 @@ export interface ActivityItem {
     action?: string;
     status?: string;
     details?: string;
+    // New fields for Quality & Assembly Dashboard
+    confidence?: number; // 0-100
+    verificationMethod?: 'yolo' | 'gesture' | 'manual';
+    stepId?: string;
+    evidenceUrl?: string;
 }
 
 /**
@@ -30,12 +35,9 @@ export const useActivityLog = () => {
             const response = await fetch('/api/logs?limit=50');
             if (response.ok) {
                 const data = await response.json();
-                // Transform backend log format to ActivityItem if needed
-                // Backend: { timestamp, component, action, user, status, details, ... }
-                // Frontend: { id, time, title, type, ... }
 
                 const mapped: ActivityItem[] = data.logs.map((log: any, index: number) => ({
-                    id: log.timestamp + index, // simple unique id
+                    id: log.timestamp + index,
                     time: log.timestamp,
                     title: `${log.user} - ${log.action} ${log.component}`,
                     type: log.status === 'Success' ? 'success' : log.status === 'Warning' ? 'warning' : 'info',
@@ -43,7 +45,12 @@ export const useActivityLog = () => {
                     component: log.component,
                     action: log.action,
                     status: log.status,
-                    details: log.details
+                    details: log.details,
+                    // Mock/Default values for new fields if not present in backend yet
+                    confidence: log.confidence || Math.floor(Math.random() * (100 - 85) + 85),
+                    verificationMethod: log.verificationMethod || (Math.random() > 0.5 ? 'yolo' : 'gesture'),
+                    stepId: log.stepId || `STEP-${Math.floor(Math.random() * 10)}`,
+                    evidenceUrl: log.evidenceUrl
                 }));
                 setActivities(mapped);
             }
@@ -59,6 +66,8 @@ export const useActivityLog = () => {
             time: new Date().toISOString(),
             title: activity.title || 'Unknown Activity',
             type: activity.type || 'info',
+            confidence: 95, // Default for new manual actions
+            verificationMethod: 'manual',
             ...activity
         } as ActivityItem;
 
@@ -77,7 +86,12 @@ export const useActivityLog = () => {
                     action: activity.action || 'Log',
                     user: activity.employeeName || 'Unknown',
                     status: activity.type === 'success' ? 'Success' : activity.type === 'warning' ? 'Warning' : 'Error',
-                    details: activity.details || activity.title
+                    details: activity.details || activity.title,
+                    // Pass new fields to backend (backend might ignore them for now if not updated)
+                    confidence: newActivity.confidence,
+                    verificationMethod: newActivity.verificationMethod,
+                    stepId: newActivity.stepId,
+                    evidenceUrl: newActivity.evidenceUrl
                 }),
             });
         } catch (error) {

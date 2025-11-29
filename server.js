@@ -16,7 +16,7 @@ const app = express();
 const port = 3000;
 
 // Python interpreter path (project venv)
-const PYTHON_PATH = '/home/noclout/employee-monitor-view/venv/bin/python3';
+const PYTHON_PATH = path.join(__dirname, 'venv/bin/python3');
 const TRAIN_SCRIPT = path.join(__dirname, 'yolo_workflow', 'scripts', 'train_model.py');
 const GESTURE_TRAIN_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
 

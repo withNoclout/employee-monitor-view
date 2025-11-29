@@ -9,18 +9,6 @@ const __dirname = path.dirname(__filename);
 // Ensure logs directory exists
 const LOGS_DIR = path.join(__dirname, '../../logs');
 
-export interface LogEntry {
-    timestamp: string;
-    component: string;
-    action: string;
-    user: string;
-    status: 'Success' | 'Warning' | 'Error';
-    details?: string;
-    assemblyId?: string;
-    partId?: string;
-    taskName?: string;
-}
-
 // Initialize logs directory
 (async () => {
     try {
@@ -30,7 +18,7 @@ export interface LogEntry {
     }
 })();
 
-export const appendLog = async (entry: LogEntry) => {
+export const appendLog = async (entry) => {
     try {
         // Use hierarchical path: Task/Component/Part/Year/Month/Day
         // Default to "General" task and "Unknown" component if not provided
@@ -50,22 +38,15 @@ export const appendLog = async (entry: LogEntry) => {
 };
 
 export const readLogs = async (
-    filter?: {
-        component?: string;
-        user?: string;
-        startDate?: string;
-        endDate?: string;
-        limit?: number;
-        offset?: number;
-    }
-): Promise<{ logs: LogEntry[], total: number }> => {
+    filter
+) => {
     // NOTE: For a file-based system, reading ALL logs across all folders is expensive.
     // For this implementation, we will scan the 'logs' directory recursively.
     // In a real production system, this should be replaced by a database query.
 
-    const allLogs: LogEntry[] = [];
+    const allLogs = [];
 
-    async function scanDir(dir: string) {
+    async function scanDir(dir) {
         const entries = await fs.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
             const fullPath = path.join(dir, entry.name);
@@ -101,16 +82,16 @@ export const readLogs = async (
     let filtered = allLogs;
     if (filter) {
         if (filter.component) {
-            filtered = filtered.filter(l => l.component.toLowerCase().includes(filter.component!.toLowerCase()));
+            filtered = filtered.filter(l => l.component.toLowerCase().includes(filter.component.toLowerCase()));
         }
         if (filter.user) {
-            filtered = filtered.filter(l => l.user.toLowerCase().includes(filter.user!.toLowerCase()));
+            filtered = filtered.filter(l => l.user.toLowerCase().includes(filter.user.toLowerCase()));
         }
         if (filter.startDate) {
-            filtered = filtered.filter(l => new Date(l.timestamp) >= new Date(filter.startDate!));
+            filtered = filtered.filter(l => new Date(l.timestamp) >= new Date(filter.startDate));
         }
         if (filter.endDate) {
-            filtered = filtered.filter(l => new Date(l.timestamp) <= new Date(filter.endDate!));
+            filtered = filtered.filter(l => new Date(l.timestamp) <= new Date(filter.endDate));
         }
     }
 

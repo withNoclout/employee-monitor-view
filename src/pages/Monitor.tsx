@@ -2429,26 +2429,30 @@ const Monitor = () => {
           </div>
 
           {/* Right: Task List */}
-          <div className="col-span-4">
-            <Card className="h-full flex flex-col">
-              <CardHeader className="py-3 border-b flex-shrink-0">
-                <CardTitle className="text-base">Today's Tasks</CardTitle>
+          <div className="col-span-4 h-full flex flex-col gap-4">
+            {/* Pending Tasks */}
+            <Card className="flex-1 flex flex-col min-h-0">
+              <CardHeader className="py-3 border-b flex-shrink-0 bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Pending Tasks</CardTitle>
+                  <Badge variant="secondary">{tasks.filter(t => t.status !== 'completed').length}</Badge>
+                </div>
               </CardHeader>
               <ScrollArea className="flex-1">
                 <div className="p-3 space-y-2">
-                  {tasks.length === 0 ? (
+                  {tasks.filter(t => t.status !== 'completed').length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      <p>No tasks assigned</p>
+                      <p>No pending tasks</p>
                     </div>
                   ) : (
-                    tasks.map(task => (
+                    tasks.filter(t => t.status !== 'completed').map(task => (
                       <div
                         key={task.id}
                         onClick={() => handleSelectTask(task)}
                         className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedTask?.id === task.id
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                          } ${task.status === 'completed' ? 'opacity-60' : ''}`}
+                          }`}
                       >
                         <div className="flex items-start gap-3">
                           {getTaskIcon(task.type)}
@@ -2461,9 +2465,6 @@ const Monitor = () => {
                               <Badge variant="outline" className="text-[10px]">
                                 {task.frequency}
                               </Badge>
-                              {task.status === 'completed' && (
-                                <Badge className="bg-green-500 text-[10px]">Done</Badge>
-                              )}
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">
                               {task.completedSteps}/{task.totalSteps} steps • Due: {task.dueDate}
@@ -2475,26 +2476,76 @@ const Monitor = () => {
                   )}
                 </div>
               </ScrollArea>
-
-              <div className="p-3 border-t flex-shrink-0 space-y-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => navigate("/manage-team")}
-                >
-                  Manage WI Assignments
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => navigate("/training")}
-                >
-                  Train Gestures/Components
-                </Button>
-              </div>
             </Card>
+
+            {/* Completed Tasks */}
+            <Card className="flex-1 flex flex-col min-h-0">
+              <CardHeader className="py-3 border-b flex-shrink-0 bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Completed Tasks</CardTitle>
+                  <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100">
+                    {tasks.filter(t => t.status === 'completed').length}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <ScrollArea className="flex-1">
+                <div className="p-3 space-y-2">
+                  {tasks.filter(t => t.status === 'completed').length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No completed tasks</p>
+                    </div>
+                  ) : (
+                    tasks.filter(t => t.status === 'completed').map(task => (
+                      <div
+                        key={task.id}
+                        onClick={() => handleSelectTask(task)}
+                        className={`p-3 rounded-lg border cursor-pointer transition-all opacity-60 hover:opacity-100 ${selectedTask?.id === task.id
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                          }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-medium text-sm truncate line-through text-muted-foreground">{task.title}</p>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-[10px]">
+                                {task.frequency}
+                              </Badge>
+                              <Badge className="bg-green-500 text-[10px]">Done</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Completed at {task.completedAt ? new Date(task.completedAt).toLocaleTimeString() : 'Unknown'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            </Card>
+
+            <div className="flex-shrink-0 space-y-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => navigate("/manage-team")}
+              >
+                Manage WI Assignments
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => navigate("/training")}
+              >
+                Train Gestures/Components
+              </Button>
+            </div>
           </div>
         </div>
       </div>

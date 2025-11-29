@@ -15,11 +15,11 @@ const __dirname = path.dirname(__filename);
  * @param date - Date object (defaults to now)
  */
 export const getLogFilePath = async (
-    task: string,
-    component: string,
-    part: string,
-    date: Date = new Date()
-): Promise<string> => {
+    task,
+    component,
+    part,
+    date = new Date()
+) => {
     const year = date.getFullYear().toString();
     const month = String(date.getMonth() + 1).padStart(2, "0"); // months are 0-indexed
     const day = String(date.getDate()).padStart(2, "0");
