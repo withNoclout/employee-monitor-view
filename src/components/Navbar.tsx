@@ -1,8 +1,19 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Menu, X, Megaphone, Bell, Ticket, Settings } from "lucide-react";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from "@/components/ui/dropdown-menu";
+import { LogOut, Menu, X, Megaphone, Bell, Ticket, Settings, Sun, Moon, Monitor, Globe, Zap, Clock, Lock, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
@@ -10,6 +21,7 @@ export const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -119,15 +131,102 @@ export const Navbar = () => {
             {/* Divider */}
             <div className="h-8 w-px bg-border/50" />
 
-            {/* Settings */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="hover:bg-muted transition-all shadow-sm w-10 h-10 p-0"
-              title="Settings"
-            >
-              <Settings className="w-4 h-4" />
-            </Button>
+            {/* Settings Dropdown */}
+            <DropdownMenu>
+              <Button
+                variant="outline"
+                size="sm"
+                className="hover:bg-muted transition-all shadow-sm w-10 h-10 p-0"
+                title="Settings"
+                asChild
+              >
+                <div>
+                  <Settings className="w-4 h-4" />
+                </div>
+              </Button>
+              <DropdownMenuContent 
+                align="end" 
+                className="w-72 bg-card border-border shadow-industrial-lg z-50"
+              >
+                <DropdownMenuLabel className="text-base font-bold">Settings</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border/50" />
+                
+                {/* Theme Selection - FUNCTIONAL */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer">
+                    <Sun className="w-4 h-4 mr-2" />
+                    <span className="font-medium">Theme</span>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="bg-card border-border shadow-industrial z-50">
+                    <DropdownMenuItem 
+                      onClick={() => setTheme("light")}
+                      className={`cursor-pointer ${theme === "light" ? "bg-primary/10 text-primary" : ""}`}
+                    >
+                      <Sun className="w-4 h-4 mr-2" />
+                      Light
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => setTheme("dark")}
+                      className={`cursor-pointer ${theme === "dark" ? "bg-primary/10 text-primary" : ""}`}
+                    >
+                      <Moon className="w-4 h-4 mr-2" />
+                      Dark
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => setTheme("system")}
+                      className={`cursor-pointer ${theme === "system" ? "bg-primary/10 text-primary" : ""}`}
+                    >
+                      <Monitor className="w-4 h-4 mr-2" />
+                      System
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+
+                <DropdownMenuSeparator className="bg-border/50" />
+
+                {/* Account Settings - Placeholder */}
+                <DropdownMenuItem className="cursor-pointer">
+                  <User className="w-4 h-4 mr-2" />
+                  <span className="font-medium">Account Settings</span>
+                </DropdownMenuItem>
+
+                {/* Language - Placeholder */}
+                <DropdownMenuItem className="cursor-pointer">
+                  <Globe className="w-4 h-4 mr-2" />
+                  <span className="font-medium">Language</span>
+                  <span className="ml-auto text-xs text-muted-foreground">English</span>
+                </DropdownMenuItem>
+
+                {/* Display Preferences - Placeholder */}
+                <DropdownMenuItem className="cursor-pointer">
+                  <Zap className="w-4 h-4 mr-2" />
+                  <span className="font-medium">Display Density</span>
+                  <span className="ml-auto text-xs text-muted-foreground">Comfortable</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator className="bg-border/50" />
+
+                {/* Session Settings - Placeholder */}
+                <DropdownMenuItem className="cursor-pointer">
+                  <Clock className="w-4 h-4 mr-2" />
+                  <span className="font-medium">Session Timeout</span>
+                  <span className="ml-auto text-xs text-muted-foreground">5 min</span>
+                </DropdownMenuItem>
+
+                {/* Security - Placeholder */}
+                <DropdownMenuItem className="cursor-pointer">
+                  <Lock className="w-4 h-4 mr-2" />
+                  <span className="font-medium">Security & Privacy</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator className="bg-border/50" />
+
+                {/* About */}
+                <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                  NextXO Monitor v1.0.0
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             
             <Button
               onClick={handleLogout}
