@@ -1424,45 +1424,47 @@ const Training = () => {
           {/* Main Content */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Upload Section (CNN) or Camera (KNN) */}
-            <Card className="lg:col-span-2 border-border/50 shadow-industrial">
+            <Card className="lg:col-span-2 glass-effect shadow-industrial-lg border-border/40">
               <CardHeader className="border-b border-border/30">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="tracking-tight">{activeTab === 'cnn' ? "Add New Samples" : "Live Camera Feed"}</CardTitle>
-                    <CardDescription className="text-[11px]">
+                    <CardTitle className="text-lg font-bold tracking-wide uppercase">
+                      {activeTab === 'cnn' ? "Add New Samples" : "Live Camera Feed"}
+                    </CardTitle>
+                    <CardDescription className="text-xs uppercase tracking-widest text-muted-foreground mt-1">
                       {activeTab === 'cnn' 
                         ? "Upload images or capture from webcam to label" 
                         : "Use your camera to capture movement gestures for training"}
                     </CardDescription>
                   </div>
                   {activeTab === 'cnn' && (
-                    <div className="flex items-center bg-muted rounded-lg p-1">
+                    <div className="flex items-center glass-effect rounded-lg p-1 shadow-sm border border-border/30">
                       <Button
                         variant={cnnInputMode === 'upload' ? 'secondary' : 'ghost'}
                         size="sm"
                         onClick={() => setCnnInputMode('upload')}
-                        className="h-7"
+                        className="h-8 font-bold uppercase text-xs shadow-sm"
                       >
-                        <Upload className="w-3 h-3 mr-2" />
+                        <Upload className="w-3.5 h-3.5 mr-2" />
                         Upload
                       </Button>
                       <Button
                         variant={cnnInputMode === 'camera' ? 'secondary' : 'ghost'}
                         size="sm"
                         onClick={() => setCnnInputMode('camera')}
-                        className="h-7"
+                        className="h-8 font-bold uppercase text-xs shadow-sm"
                       >
-                        <Camera className="w-3 h-3 mr-2" />
+                        <Camera className="w-3.5 h-3.5 mr-2" />
                         Camera
                       </Button>
                     </div>
                   )}
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-6">
                 {activeTab === 'cnn' ? (
                   cnnInputMode === 'upload' ? (
-                    <div className="border-2 border-dashed border-border rounded-xl p-12 flex flex-col items-center justify-center text-center hover:bg-muted/50 transition-colors relative">
+                    <div className="border-2 border-dashed border-border/40 rounded-xl p-12 flex flex-col items-center justify-center text-center hover:bg-muted/30 transition-all duration-300 relative glass-effect shadow-sm">
                       <input
                         type="file"
                         multiple
@@ -1470,15 +1472,18 @@ const Training = () => {
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                         onChange={handleFileSelect}
                       />
-                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 pointer-events-none">
-                        <Upload className="w-8 h-8 text-primary" />
+                      <div className="w-20 h-20 glass-effect border-2 border-border/50 rounded-2xl flex items-center justify-center mb-6 pointer-events-none shadow-industrial">
+                        <Upload className="w-10 h-10 text-primary" />
                       </div>
-                      <h3 className="text-lg font-semibold mb-2 pointer-events-none">Drop images here or click to browse</h3>
-                      <p className="text-muted-foreground mb-6 pointer-events-none">Support for JPG, PNG, WEBP</p>
-                      <Button className="pointer-events-none">Select Files</Button>
+                      <h3 className="text-lg font-bold tracking-wide uppercase mb-2 pointer-events-none">Drop images here or click to browse</h3>
+                      <p className="text-xs text-muted-foreground uppercase tracking-widest mb-6 pointer-events-none">Support for JPG, PNG, WEBP</p>
+                      <Button className="pointer-events-none font-bold uppercase shadow-industrial">
+                        <ImageIcon className="w-4 h-4 mr-2" />
+                        Select Files
+                      </Button>
                     </div>
                   ) : (
-                    <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-border">
+                    <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border-2 border-border/40 shadow-industrial-lg">
                       <video 
                         ref={cnnVideoRef} 
                         autoPlay 
@@ -1486,8 +1491,12 @@ const Training = () => {
                         muted 
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute bottom-4 left-0 right-0 flex justify-center z-10">
-                        <Button onClick={captureCnnImage} size="lg" className="rounded-full shadow-lg">
+                      <div className="absolute bottom-6 left-0 right-0 flex justify-center z-10">
+                        <Button 
+                          onClick={captureCnnImage} 
+                          size="lg" 
+                          className="rounded-full shadow-industrial-lg glass-effect font-bold uppercase tracking-wide hover:scale-105 transition-transform"
+                        >
                           <Camera className="w-5 h-5 mr-2" />
                           Capture & Label
                         </Button>
