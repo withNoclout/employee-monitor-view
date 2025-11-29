@@ -13,8 +13,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = 3000;
 
-// Python interpreter path (from venv)
-const PYTHON_PATH = '/home/noclout/Vision_sign/QC_hackaton/server/venv/bin/python';
+// Python interpreter path (project venv)
+const PYTHON_PATH = '/home/noclout/employee-monitor-view/venv/bin/python3';
 const TRAIN_SCRIPT = path.join(__dirname, 'yolo_workflow', 'scripts', 'train_model.py');
 const GESTURE_TRAIN_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
 
@@ -195,6 +195,53 @@ app.get('/api/classes', (req, res) => {
     }
 });
 
+// Save single annotation from Annotate page
+app.post('/api/yolo/save-annotation', (req, res) => {
+    try {
+        const { image, annotations } = req.body;
+        
+        if (!image || !annotations || annotations.length === 0) {
+            return res.status(400).json({ error: 'Image and annotations required' });
+        }
+
+        // Create a new batch folder for this annotation
+        const timestamp = Date.now();
+        const batchName = `annotate_${timestamp}`;
+        const batchDir = path.join(RAW_DATA_DIR, batchName);
+        const imagesDir = path.join(batchDir, 'images');
+        const labelsDir = path.join(batchDir, 'labels');
+
+        fs.mkdirSync(imagesDir, { recursive: true });
+        fs.mkdirSync(labelsDir, { recursive: true });
+
+        // Save image
+        const imageName = `capture_${timestamp}.jpg`;
+        const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+        fs.writeFileSync(path.join(imagesDir, imageName), base64Data, 'base64');
+
+        // Save label in YOLO format
+        const labelName = `capture_${timestamp}.txt`;
+        const labelContent = annotations.map(ann => {
+            // YOLO format: class_id center_x center_y width height (all normalized 0-1)
+            return `${ann.classId} ${ann.x.toFixed(6)} ${ann.y.toFixed(6)} ${ann.width.toFixed(6)} ${ann.height.toFixed(6)}`;
+        }).join('\n');
+        
+        fs.writeFileSync(path.join(labelsDir, labelName), labelContent);
+
+        console.log(`[Annotate] Saved: ${imageName} with ${annotations.length} annotation(s)`);
+        
+        res.json({ 
+            success: true, 
+            message: `Saved to ${batchName}`,
+            imagePath: path.join(imagesDir, imageName),
+            labelPath: path.join(labelsDir, labelName)
+        });
+    } catch (error) {
+        console.error('[Annotate] Error saving:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/train', (req, res) => {
     console.log('Starting training process...');
     
@@ -270,9 +317,14 @@ app.post('/api/detect', express.json({ limit: '10mb' }), async (req, res) => {
                 
                 if (code === 0) {
                     try {
-                        resolve(JSON.parse(output));
+                        // Try to parse just the last line (in case of warnings)
+                        const lines = output.trim().split('\n');
+                        const jsonLine = lines[lines.length - 1];
+                        resolve(JSON.parse(jsonLine));
                     } catch(e) {
-                        reject(new Error('Failed to parse detection output'));
+                        console.error('Parse error. Raw output:', output);
+                        console.error('Stderr:', error);
+                        reject(new Error('Failed to parse detection output: ' + output.substring(0, 200)));
                     }
                 } else {
                     reject(new Error(error || 'Detection failed'));

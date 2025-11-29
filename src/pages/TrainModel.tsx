@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as tf from '@tensorflow/tfjs';
 import * as mobilenet from '@tensorflow-models/mobilenet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Camera, Save, Play, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Camera, Save, Play, Plus, Trash2, Grid3X3 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ClassData {
@@ -15,6 +16,7 @@ interface ClassData {
 }
 
 const TrainModel = () => {
+  const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [mobilenetModel, setMobilenetModel] = useState<mobilenet.MobileNet | null>(null);
   const [classifier, setClassifier] = useState<tf.Sequential | null>(null);
@@ -206,6 +208,9 @@ const TrainModel = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Train Custom AI Model</h1>
         <div className="space-x-2">
+          <Button onClick={() => navigate('/annotate')} variant="outline">
+            <Grid3X3 className="mr-2 h-4 w-4" /> Quick Annotate
+          </Button>
           <Button onClick={saveModel} disabled={!classifier} variant="outline">
             <Save className="mr-2 h-4 w-4" /> Save Model
           </Button>

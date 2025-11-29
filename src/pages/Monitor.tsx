@@ -64,6 +64,20 @@ interface Detection {
   bbox: { x1: number; y1: number; x2: number; y2: number };
 }
 
+// Vote-based detection tracking
+interface TrackedDetection {
+  class: string;
+  votes: number;
+  totalConfidence: number;
+  lastSeen: number; // timestamp
+  bbox: { x1: number; y1: number; x2: number; y2: number }; // Latest bbox
+  confirmed: boolean;
+}
+
+const VOTE_THRESHOLD = 4; // Need 4 detections to confirm
+const VOTE_DECAY_MS = 1000; // Lose votes after 1 second without detection
+const VOTE_MIN_CONFIDENCE = 0.35; // Minimum confidence to count as a vote (raised to reduce false positives)
+
 // Helper functions for task persistence
 const getTodayKey = () => new Date().toISOString().split('T')[0]; // "2025-11-27"
 
@@ -149,6 +163,7 @@ const Monitor = () => {
   const [trainedComponents, setTrainedComponents] = useState<string[]>([]);
   const [currentGesture, setCurrentGesture] = useState<string | null>(null);
   const [currentComponents, setCurrentComponents] = useState<Detection[]>([]);
+  const [trackedDetections, setTrackedDetections] = useState<Map<string, TrackedDetection>>(new Map());
   const [handsDetected, setHandsDetected] = useState(0);
   const lastDetectionTime = useRef<number>(0);
   const [isDetecting, setIsDetecting] = useState(false);
@@ -191,6 +206,7 @@ const Monitor = () => {
   // Test Component State
   const [isTestingComponent, setIsTestingComponent] = useState(false);
   const [testComponentResult, setTestComponentResult] = useState<string | null>(null);
+  const [isComponentDetectionActive, setIsComponentDetectionActive] = useState(false); // Only detect when button clicked or verifying step
 
   // Confidence threshold for locking gesture/component
   const LOCK_CONFIDENCE = 0.5; // 50% confidence to lock in (same as DTW threshold)
@@ -674,26 +690,41 @@ const Monitor = () => {
       .trim();
   };
 
-  // Test Component function - single snapshot detection
+  // Focus area dimensions (center rectangle where user should place object)
+  const FOCUS_AREA = {
+    // 50% of video in center
+    widthRatio: 0.5,
+    heightRatio: 0.5,
+  };
+
+  // Test Component function - single snapshot detection from focus area
   const startTestComponent = async () => {
     if (isTestingComponent || !videoRef.current) return;
 
     setIsTestingComponent(true);
+    setIsComponentDetectionActive(true); // Enable detection mode
     setTestComponentResult(null);
+    setTrackedDetections(new Map()); // Reset vote tracking
 
     try {
       const video = videoRef.current;
       
-      // Create canvas to capture frame
+      // Calculate focus area (center rectangle)
+      const focusWidth = Math.floor(video.videoWidth * FOCUS_AREA.widthRatio);
+      const focusHeight = Math.floor(video.videoHeight * FOCUS_AREA.heightRatio);
+      const focusX = Math.floor((video.videoWidth - focusWidth) / 2);
+      const focusY = Math.floor((video.videoHeight - focusHeight) / 2);
+      
+      // Create canvas to capture ONLY the focus area
       const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = video.videoWidth;
-      tempCanvas.height = video.videoHeight;
+      tempCanvas.width = focusWidth;
+      tempCanvas.height = focusHeight;
       const tempCtx = tempCanvas.getContext('2d');
       
       if (!tempCtx) throw new Error("Could not create canvas context");
 
-      // Capture current frame
-      tempCtx.drawImage(video, 0, 0);
+      // Capture only the focus area (center rectangle)
+      tempCtx.drawImage(video, focusX, focusY, focusWidth, focusHeight, 0, 0, focusWidth, focusHeight);
       const base64 = tempCanvas.toDataURL('image/jpeg', 0.8);
 
       toast.info("Detecting components...");
@@ -713,25 +744,51 @@ const Monitor = () => {
       console.log('[TestComponent] Detection result:', result);
 
       if (result.detections && result.detections.length > 0) {
-        // Show all detected components
+        // Show all detected components in focus area
         const detected = result.detections
           .map((d: any) => `${d.class} (${(d.confidence * 100).toFixed(0)}%)`)
           .join(', ');
         setTestComponentResult(detected);
-        toast.success(`Found: ${detected}`);
+        toast.success(`Found in focus area: ${detected}`);
+        
+        // Store detections with adjusted coordinates (relative to full frame)
+        const video = videoRef.current!;
+        const focusWidth = Math.floor(video.videoWidth * FOCUS_AREA.widthRatio);
+        const focusHeight = Math.floor(video.videoHeight * FOCUS_AREA.heightRatio);
+        const focusX = Math.floor((video.videoWidth - focusWidth) / 2);
+        const focusY = Math.floor((video.videoHeight - focusHeight) / 2);
+        
+        const adjustedDetections = result.detections.map((det: any) => ({
+          ...det,
+          bbox: {
+            x1: (det.bbox.x1 * focusWidth + focusX) / video.videoWidth,
+            y1: (det.bbox.y1 * focusHeight + focusY) / video.videoHeight,
+            x2: (det.bbox.x2 * focusWidth + focusX) / video.videoWidth,
+            y2: (det.bbox.y2 * focusHeight + focusY) / video.videoHeight,
+          }
+        }));
+        setCurrentComponents(adjustedDetections);
       } else {
-        setTestComponentResult("No components detected");
-        toast.warning("No components detected in frame");
+        setTestComponentResult("No components in focus area");
+        toast.warning("Place object inside the rectangle and try again");
+        setCurrentComponents([]);
       }
 
-      // Auto-dismiss after 4 seconds
-      setTimeout(() => setTestComponentResult(null), 4000);
+      // Auto-dismiss after 4 seconds and disable detection mode
+      setTimeout(() => {
+        setTestComponentResult(null);
+        setIsComponentDetectionActive(false);
+        setCurrentComponents([]);
+      }, 4000);
 
     } catch (err: any) {
       console.error('[TestComponent] Error:', err);
       setTestComponentResult(`Error: ${err.message}`);
       toast.error(err.message);
-      setTimeout(() => setTestComponentResult(null), 3000);
+      setTimeout(() => {
+        setTestComponentResult(null);
+        setIsComponentDetectionActive(false);
+      }, 3000);
     } finally {
       setIsTestingComponent(false);
     }
@@ -774,6 +831,7 @@ const Monitor = () => {
     isClassifyingGestureRef.current = false; // Reset classification lock
     setIsRecordingGesture(false);
     setGestureRecordingComplete(false);
+    setTrackedDetections(new Map()); // Reset vote tracking
     // Stop any lingering speech recognition
     if (recognitionRef.current && isListeningRef.current) {
       isListeningRef.current = false;
@@ -832,6 +890,7 @@ const Monitor = () => {
     setLockedComponent(null);  // Reset component lock
     setComponentVerified(false);
     spokenTextRef.current = ""; // Reset speech ref
+    setTrackedDetections(new Map()); // Reset vote tracking for fresh start
 
     // Use same state as Test Gesture for UI consistency
     setIsTestingGesture(true);
@@ -1155,7 +1214,7 @@ const Monitor = () => {
       }
     }
 
-    // Check component requirement - ONLY lock when CORRECT component detected
+    // Check component requirement - ONLY lock when CONFIRMED via votes
     if (currentStep.componentId) {
       if (lockedComponent) {
         // Already locked with correct component
@@ -1163,15 +1222,19 @@ const Monitor = () => {
       } else if (components.length > 0) {
         const requiredComponent = trainedComponents.find((_, i) => `${i + 1}` === currentStep.componentId);
         if (requiredComponent) {
-          // Only lock if it's the REQUIRED component
+          // Only lock if it's the REQUIRED component AND has been CONFIRMED by vote system
           const found = components.find(c =>
-            c.class.toLowerCase() === requiredComponent.toLowerCase() && c.confidence >= LOCK_CONFIDENCE
+            c.class.toLowerCase() === requiredComponent.toLowerCase()
           );
           if (found) {
-            setLockedComponent(found.class);
-            setComponentVerified(true);
-            componentMatch = true;
-            toast.success(`✓ Component "${found.class}" - Done!`);
+            // Check if this component is confirmed by vote system
+            const tracked = trackedDetections.get(found.class);
+            if (tracked && tracked.confirmed) {
+              setLockedComponent(found.class);
+              setComponentVerified(true);
+              componentMatch = true;
+              toast.success(`✓ Component "${found.class}" confirmed (${tracked.votes} votes)!`);
+            }
           }
         }
       }
@@ -1191,7 +1254,7 @@ const Monitor = () => {
     }
 
     return gestureMatch && componentMatch && speechMatch;
-  }, [selectedTask, isTaskActive, isVerifying, currentStepIndex, trainedGestures, trainedComponents, speechVerified, lockedGesture, lockedComponent, getStepsForTask, handleCompleteStep]);
+  }, [selectedTask, isTaskActive, isVerifying, currentStepIndex, trainedGestures, trainedComponents, speechVerified, lockedGesture, lockedComponent, trackedDetections, getStepsForTask, handleCompleteStep]);
 
   // Main Detection Loop
   useEffect(() => {
@@ -1246,36 +1309,75 @@ const Monitor = () => {
           // Keep showing locked gesture or last DTW result
         }
 
-        // Component Detection (throttled + ROI optimization) - SKIP if component already locked
-        const shouldDetectComponent = !lockedComponent && isVerifying;
+        // === DRAW FOCUS RECTANGLE GUIDE (always visible) ===
+        const focusWidth = Math.floor(video.videoWidth * FOCUS_AREA.widthRatio);
+        const focusHeight = Math.floor(video.videoHeight * FOCUS_AREA.heightRatio);
+        const focusX = Math.floor((video.videoWidth - focusWidth) / 2);
+        const focusY = Math.floor((video.videoHeight - focusHeight) / 2);
 
-        if (!lockedComponent && !isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
+        // Draw dashed rectangle guide
+        ctx.strokeStyle = isComponentDetectionActive ? '#22c55e' : 'rgba(255, 255, 255, 0.6)'; // Green when active, white otherwise
+        ctx.lineWidth = isComponentDetectionActive ? 3 : 2;
+        ctx.setLineDash([10, 10]);
+        ctx.strokeRect(focusX, focusY, focusWidth, focusHeight);
+        ctx.setLineDash([]);
+
+        // Draw corner brackets for better visibility
+        const bracketSize = 20;
+        ctx.strokeStyle = isComponentDetectionActive ? '#22c55e' : 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 3;
+        // Top-left
+        ctx.beginPath();
+        ctx.moveTo(focusX, focusY + bracketSize);
+        ctx.lineTo(focusX, focusY);
+        ctx.lineTo(focusX + bracketSize, focusY);
+        ctx.stroke();
+        // Top-right
+        ctx.beginPath();
+        ctx.moveTo(focusX + focusWidth - bracketSize, focusY);
+        ctx.lineTo(focusX + focusWidth, focusY);
+        ctx.lineTo(focusX + focusWidth, focusY + bracketSize);
+        ctx.stroke();
+        // Bottom-left
+        ctx.beginPath();
+        ctx.moveTo(focusX, focusY + focusHeight - bracketSize);
+        ctx.lineTo(focusX, focusY + focusHeight);
+        ctx.lineTo(focusX + bracketSize, focusY + focusHeight);
+        ctx.stroke();
+        // Bottom-right
+        ctx.beginPath();
+        ctx.moveTo(focusX + focusWidth - bracketSize, focusY + focusHeight);
+        ctx.lineTo(focusX + focusWidth, focusY + focusHeight);
+        ctx.lineTo(focusX + focusWidth, focusY + focusHeight - bracketSize);
+        ctx.stroke();
+
+        // Draw label above rectangle
+        if (!isComponentDetectionActive) {
+          ctx.font = '14px Arial';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.textAlign = 'center';
+          ctx.fillText('Place object here', focusX + focusWidth / 2, focusY - 10);
+          ctx.textAlign = 'left';
+        }
+
+        // Component Detection - ONLY run when explicitly testing or verifying step with component requirement
+        const stepRequiresComponent = isVerifying && !lockedComponent && 
+          selectedTask && getStepsForTask(selectedTask)[currentStepIndex]?.componentId;
+        const shouldDetectComponent = (isComponentDetectionActive || stepRequiresComponent) && !lockedComponent;
+
+        if (shouldDetectComponent && !isDetecting && now - lastDetectionTime.current > detectionIntervalRef.current) {
           lastDetectionTime.current = now;
           setIsDetecting(true);
 
-          // Calculate ROI - center cross pattern (areas 2,4,5,6,8)
-          // This is effectively the middle 2/3 width and 2/3 height
-          const roiX = Math.floor(video.videoWidth / 6);  // Start at 1/6 from left
-          const roiY = Math.floor(video.videoHeight / 6); // Start at 1/6 from top
-          const roiWidth = Math.floor(video.videoWidth * 2 / 3);  // 2/3 of width
-          const roiHeight = Math.floor(video.videoHeight * 2 / 3); // 2/3 of height
-
           const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = roiWidth;
-          tempCanvas.height = roiHeight;
+          tempCanvas.width = focusWidth;
+          tempCanvas.height = focusHeight;
           const tempCtx = tempCanvas.getContext('2d');
 
           if (tempCtx) {
-            // Draw only the ROI region
-            tempCtx.drawImage(video, roiX, roiY, roiWidth, roiHeight, 0, 0, roiWidth, roiHeight);
-            const base64 = tempCanvas.toDataURL('image/jpeg', 0.7); // Slightly lower quality for speed
-
-            // Draw ROI indicator on main canvas (subtle)
-            ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([5, 5]);
-            ctx.strokeRect(roiX, roiY, roiWidth, roiHeight);
-            ctx.setLineDash([]);
+            // Draw only the focus area region
+            tempCtx.drawImage(video, focusX, focusY, focusWidth, focusHeight, 0, 0, focusWidth, focusHeight);
+            const base64 = tempCanvas.toDataURL('image/jpeg', 0.7);
 
             try {
               const response = await fetch('http://localhost:3000/api/detect', {
@@ -1288,33 +1390,82 @@ const Monitor = () => {
                 const result = await response.json();
                 console.log('YOLO Detection result:', result);
                 if (result.detections) {
-                  // Adjust bbox coordinates from ROI to full frame
+                  // Adjust bbox coordinates from focus area to full frame
                   const adjustedDetections = result.detections.map((det: Detection) => ({
                     ...det,
                     bbox: {
-                      // Convert ROI-relative coords to full-frame coords
-                      x1: (det.bbox.x1 * roiWidth + roiX) / video.videoWidth,
-                      y1: (det.bbox.y1 * roiHeight + roiY) / video.videoHeight,
-                      x2: (det.bbox.x2 * roiWidth + roiX) / video.videoWidth,
-                      y2: (det.bbox.y2 * roiHeight + roiY) / video.videoHeight,
+                      // Convert focus-relative coords to full-frame coords
+                      x1: (det.bbox.x1 * focusWidth + focusX) / video.videoWidth,
+                      y1: (det.bbox.y1 * focusHeight + focusY) / video.videoHeight,
+                      x2: (det.bbox.x2 * focusWidth + focusX) / video.videoWidth,
+                      y2: (det.bbox.y2 * focusHeight + focusY) / video.videoHeight,
                     }
                   }));
                   setCurrentComponents(adjustedDetections);
 
-                  // Adaptive detection frequency
-                  // Check if any detection has >70% confidence
-                  const hasHighConfidence = adjustedDetections.some(
-                    (det: Detection) => det.confidence >= 0.70
-                  );
+                  // === VOTE SYSTEM: Update tracked detections ===
+                  const now = Date.now();
+                  setTrackedDetections(prev => {
+                    const updated = new Map(prev);
+                    
+                    // Process each detection and add votes
+                    adjustedDetections.forEach((det: Detection) => {
+                      if (det.confidence >= VOTE_MIN_CONFIDENCE) {
+                        const existing = updated.get(det.class);
+                        if (existing) {
+                          // Add vote to existing tracked detection
+                          updated.set(det.class, {
+                            ...existing,
+                            votes: Math.min(existing.votes + 1, VOTE_THRESHOLD + 2), // Cap at threshold + 2
+                            totalConfidence: existing.totalConfidence + det.confidence,
+                            lastSeen: now,
+                            bbox: det.bbox, // Update to latest position
+                            confirmed: existing.votes + 1 >= VOTE_THRESHOLD
+                          });
+                        } else {
+                          // Start tracking new detection
+                          updated.set(det.class, {
+                            class: det.class,
+                            votes: 1,
+                            totalConfidence: det.confidence,
+                            lastSeen: now,
+                            bbox: det.bbox,
+                            confirmed: false
+                          });
+                        }
+                      }
+                    });
+                    
+                    // Decay votes for classes not seen in this frame
+                    const detectedClasses = new Set(adjustedDetections.map((d: Detection) => d.class));
+                    updated.forEach((tracked, className) => {
+                      if (!detectedClasses.has(className)) {
+                        // Check if it's been too long since last seen
+                        if (now - tracked.lastSeen > VOTE_DECAY_MS) {
+                          // Decay votes
+                          const newVotes = tracked.votes - 1;
+                          if (newVotes <= 0) {
+                            updated.delete(className);
+                          } else {
+                            updated.set(className, {
+                              ...tracked,
+                              votes: newVotes,
+                              confirmed: newVotes >= VOTE_THRESHOLD
+                            });
+                          }
+                        }
+                      }
+                    });
+                    
+                    return updated;
+                  });
 
-                  if (hasHighConfidence) {
-                    // Object found - slow down detection
+                  // Adaptive detection frequency based on vote confirmation
+                  const hasConfirmedDetection = Array.from(trackedDetections.values()).some(t => t.confirmed);
+                  if (hasConfirmedDetection) {
                     detectionIntervalRef.current = SLOW_DETECTION_INTERVAL;
-                    console.log('[Adaptive] Object found (>70%), slowing to 2000ms');
                   } else {
-                    // No confident detection - speed up to search
                     detectionIntervalRef.current = FAST_DETECTION_INTERVAL;
-                    console.log('[Adaptive] Searching for objects, fast mode 500ms');
                   }
                 } else {
                   // No detections at all - fast search mode
@@ -1334,66 +1485,102 @@ const Monitor = () => {
           setIsDetecting(false);
         }
 
-        // Draw component detections (only >70% confidence, blue boxes)
-        // Merge overlapping boxes of same class
-        const filteredDetections = currentComponents.filter(det => det.confidence >= 0.70);
-        const mergedDetections: typeof filteredDetections = [];
+        // === VOTE-BASED BOUNDING BOX DRAWING ===
+        // Draw all tracked detections with vote progress
+        trackedDetections.forEach((tracked, className) => {
+          const x1 = tracked.bbox.x1 * canvas.width;
+          const y1 = tracked.bbox.y1 * canvas.height;
+          const x2 = tracked.bbox.x2 * canvas.width;
+          const y2 = tracked.bbox.y2 * canvas.height;
+          const boxWidth = x2 - x1;
+          const boxHeight = y2 - y1;
 
-        filteredDetections.forEach(det => {
-          // Check if this detection overlaps with an existing merged detection
-          const overlapThreshold = 0.3; // 30% overlap = same object
-          let merged = false;
+          // Color based on confirmation status
+          const isConfirmed = tracked.confirmed;
+          const voteProgress = Math.min(tracked.votes / VOTE_THRESHOLD, 1);
 
-          for (let i = 0; i < mergedDetections.length; i++) {
-            const existing = mergedDetections[i];
-            if (existing.class !== det.class) continue;
-
-            // Calculate IoU (Intersection over Union)
-            const x1 = Math.max(det.bbox.x1, existing.bbox.x1);
-            const y1 = Math.max(det.bbox.y1, existing.bbox.y1);
-            const x2 = Math.min(det.bbox.x2, existing.bbox.x2);
-            const y2 = Math.min(det.bbox.y2, existing.bbox.y2);
-
-            const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-            const area1 = (det.bbox.x2 - det.bbox.x1) * (det.bbox.y2 - det.bbox.y1);
-            const area2 = (existing.bbox.x2 - existing.bbox.x1) * (existing.bbox.y2 - existing.bbox.y1);
-            const union = area1 + area2 - intersection;
-            const iou = intersection / union;
-
-            if (iou > overlapThreshold) {
-              // Merge: keep the one with higher confidence
-              if (det.confidence > existing.confidence) {
-                mergedDetections[i] = det;
-              }
-              merged = true;
-              break;
-            }
+          if (isConfirmed) {
+            // Confirmed - solid green
+            ctx.strokeStyle = '#22c55e'; // green-500
+            ctx.lineWidth = 3;
+          } else {
+            // Accumulating - orange/yellow with progress
+            ctx.strokeStyle = `rgba(245, 158, 11, ${0.5 + voteProgress * 0.5})`; // amber with increasing opacity
+            ctx.lineWidth = 2;
           }
 
-          if (!merged) {
-            mergedDetections.push(det);
-          }
-        });
+          // Draw bounding box
+          ctx.strokeRect(x1, y1, boxWidth, boxHeight);
 
-        // Draw merged detections
-        mergedDetections.forEach(det => {
-          const x1 = det.bbox.x1 * canvas.width;
-          const y1 = det.bbox.y1 * canvas.height;
-          const x2 = det.bbox.x2 * canvas.width;
-          const y2 = det.bbox.y2 * canvas.height;
-
-          ctx.strokeStyle = '#3b82f6';
-          ctx.lineWidth = 3;
-          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-
-          ctx.fillStyle = '#3b82f6';
+          // Draw label background
+          const label = isConfirmed 
+            ? `✓ ${className}` 
+            : `${className} (${tracked.votes}/${VOTE_THRESHOLD})`;
           ctx.font = 'bold 14px Arial';
-          ctx.fillText(`${det.class} ${(det.confidence * 100).toFixed(0)}%`, x1, y1 - 5);
+          const textWidth = ctx.measureText(label).width;
+          const labelHeight = 20;
+          const labelY = y1 > labelHeight + 5 ? y1 - labelHeight - 2 : y1 + boxHeight + 2;
+          
+          // Background for label
+          ctx.fillStyle = isConfirmed ? 'rgba(34, 197, 94, 0.9)' : 'rgba(245, 158, 11, 0.9)';
+          ctx.fillRect(x1, labelY, textWidth + 8, labelHeight);
+          
+          // Label text
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(label, x1 + 4, labelY + 15);
+
+          // Draw vote progress bar under the box (for non-confirmed)
+          if (!isConfirmed && tracked.votes > 0) {
+            const progressBarHeight = 4;
+            const progressBarY = y2 + 4;
+            
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(x1, progressBarY, boxWidth, progressBarHeight);
+            
+            // Progress
+            ctx.fillStyle = '#f59e0b'; // amber
+            ctx.fillRect(x1, progressBarY, boxWidth * voteProgress, progressBarHeight);
+          }
         });
 
-        // Auto-verification logic - check step requirements
+        // Also draw raw detections with low opacity (shows all detected items even with low confidence)
+        currentComponents.forEach(det => {
+          // Skip if already tracked with enough votes
+          const tracked = trackedDetections.get(det.class);
+          if (tracked && tracked.votes >= 2) return; // Already being tracked well
+          
+          if (det.confidence >= VOTE_MIN_CONFIDENCE && det.confidence < 0.5) {
+            const x1 = det.bbox.x1 * canvas.width;
+            const y1 = det.bbox.y1 * canvas.height;
+            const x2 = det.bbox.x2 * canvas.width;
+            const y2 = det.bbox.y2 * canvas.height;
+
+            // Faint dashed box for low confidence detections
+            ctx.strokeStyle = 'rgba(156, 163, 175, 0.5)'; // gray-400
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+            ctx.setLineDash([]);
+            
+            // Small label
+            ctx.fillStyle = 'rgba(156, 163, 175, 0.7)';
+            ctx.font = '11px Arial';
+            ctx.fillText(`${det.class}?`, x1, y1 - 3);
+          }
+        });
+
+        // Auto-verification logic - check step requirements (use confirmed detections)
         if (isTaskActive && selectedTask && isVerifying) {
-          checkStepVerification(detectedGesture, gestureConfidence, currentComponents);
+          // Convert confirmed tracked detections to Detection[] for verification
+          const confirmedDetections: Detection[] = Array.from(trackedDetections.values())
+            .filter(t => t.confirmed)
+            .map(t => ({
+              class: t.class,
+              confidence: t.totalConfidence / t.votes, // Average confidence
+              bbox: t.bbox
+            }));
+          checkStepVerification(detectedGesture, gestureConfidence, confirmedDetections);
         }
       }
 
@@ -1402,7 +1589,7 @@ const Monitor = () => {
 
     detect();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isLive, detector, currentComponents, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting, isVerifying, lockedGesture, lockedComponent, isRecordingGesture, gestureRecordingComplete]);
+  }, [isLive, detector, currentComponents, trackedDetections, isTaskActive, selectedTask, currentStepIndex, extractFeatures, classifyGesture, checkStepVerification, isDetecting, isVerifying, lockedGesture, lockedComponent, isRecordingGesture, gestureRecordingComplete, isComponentDetectionActive, getStepsForTask]);
 
   // Load Work Instructions and build task list with persistence
   useEffect(() => {
@@ -2040,7 +2227,7 @@ const Monitor = () => {
                       </p>
                     </div>
 
-                    {/* Component Requirement - shows LOCKED status */}
+                    {/* Component Requirement - shows LOCKED status + VOTE progress */}
                     <div className={`p-3 rounded-lg border-2 transition-all ${!currentTaskSteps[currentStepIndex]?.componentId
                       ? 'border-muted bg-muted/20 opacity-50'
                       : lockedComponent
@@ -2061,6 +2248,25 @@ const Monitor = () => {
                             ? trainedComponents[parseInt(currentTaskSteps[currentStepIndex]?.componentId || '0') - 1] || 'Component'
                             : 'None required'}
                       </p>
+                      {/* Vote Progress Display */}
+                      {!lockedComponent && currentTaskSteps[currentStepIndex]?.componentId && trackedDetections.size > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {Array.from(trackedDetections.values()).slice(0, 3).map((tracked) => (
+                            <div key={tracked.class} className="flex items-center gap-2">
+                              <span className={`text-xs ${tracked.confirmed ? 'text-green-400' : 'text-orange-400'}`}>
+                                {tracked.class}
+                              </span>
+                              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all ${tracked.confirmed ? 'bg-green-500' : 'bg-orange-500'}`}
+                                  style={{ width: `${Math.min(tracked.votes / VOTE_THRESHOLD * 100, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-xs text-muted-foreground">{tracked.votes}/{VOTE_THRESHOLD}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Speech Requirement with Karaoke Preview */}

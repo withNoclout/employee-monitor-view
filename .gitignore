@@ -25,3 +25,4 @@ dist-ssr
 .env
 yolo_workflow/processed_data/
 yolo_workflow/runs/
+venv/
