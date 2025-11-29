@@ -118,8 +118,11 @@ const Index = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8 max-w-[1600px]">
+    <div className="min-h-screen bg-background relative">
+      {/* Subtle industrial background */}
+      <div className="absolute inset-0 bg-industrial-grid opacity-[0.02] pointer-events-none" />
+      
+      <div className="container mx-auto px-4 py-8 max-w-[1600px] relative">
         <DashboardHeader stats={stats} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
@@ -132,18 +135,28 @@ const Index = () => {
         </div>
 
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-foreground mb-2 flex items-center gap-3">
-            <div className="w-1 h-8 gradient-primary rounded-full" />
-            Employee Monitoring Panel
-          </h2>
-          <p className="text-muted-foreground ml-4">
-            Real-time monitoring with live camera feeds and performance tracking
-          </p>
+          <div className="flex items-center gap-4 mb-3">
+            <div className="w-1.5 h-10 gradient-primary rounded-full shadow-glow" />
+            <div>
+              <h2 className="text-2xl font-bold text-foreground tracking-tight">
+                Employee Monitoring Panel
+              </h2>
+              <p className="text-sm text-muted-foreground font-medium">
+                Real-time monitoring with live camera feeds and performance tracking
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {employees.map((employee) => (
-            <EmployeeCard key={employee.id} {...employee} />
+          {employees.map((employee, index) => (
+            <div
+              key={employee.id}
+              className="animate-fade-in-up"
+              style={{ animationDelay: `${index * 0.1}s` }}
+            >
+              <EmployeeCard {...employee} />
+            </div>
           ))}
         </div>
 
