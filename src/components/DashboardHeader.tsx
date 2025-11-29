@@ -1,6 +1,10 @@
-import { Activity, Users, TrendingUp } from "lucide-react";
+import { Activity, Users, TrendingUp, LogOut } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 
 interface StatCardProps {
   icon: React.ReactNode;
@@ -55,6 +59,10 @@ interface DashboardHeaderProps {
 }
 
 export const DashboardHeader = ({ stats }: DashboardHeaderProps) => {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
   // Default fallback values if no stats provided
   const defaultStats = {
     activeEmployees: { value: 12, trend: "+2 this week", trendDirection: 'up' as const },
@@ -64,17 +72,38 @@ export const DashboardHeader = ({ stats }: DashboardHeaderProps) => {
 
   const currentStats = stats || defaultStats;
 
+  const handleLogout = () => {
+    logout();
+    toast({
+      title: "Logged out",
+      description: "You have been successfully logged out",
+    });
+    navigate("/login");
+  };
+
   return (
     <div className="mb-10">
       <div className="mb-8 relative">
         <div className="absolute inset-0 gradient-primary opacity-5 blur-3xl -z-10" />
-        <h1 className="text-4xl font-bold text-foreground mb-3 flex items-center gap-3">
-          <img src="/logo.svg" alt="NextXO Logo" className="w-10 h-10" />
-          NextXO Employee Monitor
-        </h1>
-        <p className="text-muted-foreground text-lg">
-          Real-time overview of employee performance and compliance monitoring
-        </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-foreground mb-3 flex items-center gap-3">
+              <img src="/logo.svg" alt="NextXO Logo" className="w-10 h-10" />
+              NextXO Employee Monitor
+            </h1>
+            <p className="text-muted-foreground text-lg">
+              Real-time overview of employee performance and compliance monitoring
+            </p>
+          </div>
+          <Button
+            onClick={handleLogout}
+            variant="outline"
+            className="flex items-center gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-all"
+          >
+            <LogOut className="w-4 h-4" />
+            Logout
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
