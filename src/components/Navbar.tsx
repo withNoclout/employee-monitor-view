@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { LogOut, Menu, X, Megaphone, Bell, Ticket } from "lucide-react";
+import { LogOut, Menu, X, Megaphone, Bell, Ticket, Settings } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
@@ -118,6 +118,16 @@ export const Navbar = () => {
 
             {/* Divider */}
             <div className="h-8 w-px bg-border/50" />
+
+            {/* Settings */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="hover:bg-muted transition-all shadow-sm w-10 h-10 p-0"
+              title="Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
             
             <Button
               onClick={handleLogout}
@@ -187,22 +197,31 @@ export const Navbar = () => {
                   <Ticket className="w-5 h-5" />
                   <span className="text-xs font-medium">Tickets</span>
                   <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center bg-accent text-accent-foreground text-[10px]">
-                    2
-                  </Badge>
-                </Button>
-              </div>
-              
-              <Button
-                onClick={handleLogout}
-                variant="outline"
-                className="w-full flex items-center justify-center gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-all"
-              >
-                <LogOut className="w-4 h-4" />
-                Logout
+                  2
+                </Badge>
               </Button>
             </div>
+
+            {/* Settings */}
+            <Button
+              variant="outline"
+              className="w-full flex items-center justify-center gap-2 hover:bg-muted transition-all"
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </Button>
+              
+            <Button
+              onClick={handleLogout}
+              variant="outline"
+              className="w-full flex items-center justify-center gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 transition-all"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </Button>
           </div>
-        )}
+        </div>
+      )}
       </div>
 
       {/* Decorative line */}
