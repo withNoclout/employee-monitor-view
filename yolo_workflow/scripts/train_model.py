@@ -181,6 +181,7 @@ def main():
             mosaic=1.0,
             mixup=0.1,
             verbose=True,
+            cache=True,  # Cache images in RAM for faster training
         )
         
         # Phase 2: Fine-tune with unfrozen layers
@@ -228,6 +229,7 @@ def main():
             lr0=0.001,  # Lower learning rate for fine-tuning
             lrf=0.01,
             verbose=True,
+            cache=True,  # Cache images in RAM for faster training
         )
         
         complete_data = {
@@ -238,6 +240,12 @@ def main():
         print(f"[PROGRESS]{json.dumps(complete_data)}")
         print("Training completed successfully!")
         print(f"Best model saved at: {project_path}/custom_model/weights/best.pt")
+        
+        # Save the list of classes that were actually trained
+        trained_classes_file = BASE_DIR / 'trained_classes.txt'
+        with open(trained_classes_file, 'w') as f:
+            f.write('\n'.join(classes))
+        print(f"[INFO] Saved trained classes list to {trained_classes_file}")
         
     except Exception as e:
         error_data = {

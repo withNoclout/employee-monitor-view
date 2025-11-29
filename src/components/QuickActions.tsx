@@ -8,25 +8,30 @@ export const QuickActions = () => {
 
   const actions = [
     { icon: <Download className="w-4 h-4" />, label: "Export Report", variant: "default" as const, disabled: true },
-    { icon: <FileText className="w-4 h-4" />, label: "View Logs", variant: "outline" as const, disabled: true },
+    {
+      icon: <FileText className="w-4 h-4" />,
+      label: "View Logs",
+      variant: "outline" as const,
+      onClick: () => navigate("/view-log")
+    },
     { icon: <Settings className="w-4 h-4" />, label: "Settings", variant: "outline" as const, disabled: true },
     { icon: <Bell className="w-4 h-4" />, label: "Alerts", variant: "outline" as const, disabled: true },
-    { 
-      icon: <Users className="w-4 h-4" />, 
-      label: "Manage Team", 
+    {
+      icon: <Users className="w-4 h-4" />,
+      label: "Manage Team",
       variant: "outline" as const,
       onClick: () => navigate("/manage-team")
     },
     { icon: <BarChart3 className="w-4 h-4" />, label: "Analytics", variant: "outline" as const, disabled: true },
-    { 
-      icon: <Brain className="w-4 h-4" />, 
-      label: "Training", 
+    {
+      icon: <Brain className="w-4 h-4" />,
+      label: "Training",
       variant: "outline" as const,
       onClick: () => navigate("/training")
     },
-    { 
-      icon: <Hammer className="w-4 h-4" />, 
-      label: "Build WI", 
+    {
+      icon: <Hammer className="w-4 h-4" />,
+      label: "Build WI",
       variant: "outline" as const,
       onClick: () => navigate("/build-wi")
     },

@@ -1,11 +1,85 @@
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { EmployeeCard } from "@/components/EmployeeCard";
 import { PerformanceChart } from "@/components/PerformanceChart";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { SystemStatus } from "@/components/SystemStatus";
 import { QuickActions } from "@/components/QuickActions";
+import { Navbar } from "@/components/Navbar";
+import { DepartmentOverview } from "@/components/DepartmentOverview";
+import { EmployeeDetailView } from "@/components/EmployeeDetailView";
 
 const Index = () => {
+  // View state: 'overview' or specific department ID
+  const [currentView, setCurrentView] = useState<string>("overview");
+
+  // Live Data State
+  const [activeEmployees, setActiveEmployees] = useState(12);
+  const [avgPerformance, setAvgPerformance] = useState(90);
+  const [complianceRate, setComplianceRate] = useState(97);
+
+  const handleDepartmentClick = (departmentId: string) => {
+    setCurrentView(departmentId);
+  };
+
+  const handleBackToOverview = () => {
+    setCurrentView("overview");
+  };
+
+  // Active Employees Logic (Every 1 min)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveEmployees(prev => {
+        const change = Math.random() > 0.5 ? (Math.random() > 0.5 ? 2 : 1) : (Math.random() > 0.5 ? -2 : -1);
+        let newValue = prev + change;
+        // Clamp between 10 and 15
+        if (newValue > 15) newValue = 15;
+        if (newValue < 10) newValue = 10;
+        return newValue;
+      });
+    }, 60000); // 1 minute
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Performance & Compliance Logic (Every 5 sec)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAvgPerformance(prev => Math.max(0, prev - 0.06));
+      setComplianceRate(prev => Math.max(0, prev - 0.045));
+    }, 5000); // 5 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate Trends
+  const activeDiff = activeEmployees - 10; // Baseline 10
+  const activeTrend = activeDiff >= 0 ? `+${activeDiff} this week` : `${activeDiff} this week`;
+
+  const perfDiff = avgPerformance - 85; // Baseline 85
+  const perfTrend = perfDiff >= 0 ? `+${perfDiff.toFixed(1)}% from last week` : `${perfDiff.toFixed(1)}% from last week`;
+
+  const compDiff = complianceRate - 92; // Baseline 92
+  const compTrend = compDiff >= 0 ? `+${compDiff.toFixed(2)}% improvement` : `${compDiff.toFixed(2)}% change`;
+
+  const stats = {
+    activeEmployees: {
+      value: activeEmployees,
+      trend: activeTrend,
+      trendDirection: activeDiff >= 0 ? 'up' as const : 'down' as const
+    },
+    avgPerformance: {
+      value: avgPerformance,
+      trend: perfTrend
+    },
+    complianceRate: {
+      value: complianceRate,
+      trend: compTrend
+    }
+  };
+
   const employees = [
     {
       id: "emp-001",
@@ -58,9 +132,15 @@ const Index = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8 max-w-[1600px]">
-        <DashboardHeader />
+    <div className="min-h-screen bg-background relative">
+      {/* Sticky Navbar */}
+      <Navbar />
+      
+      {/* Subtle industrial background */}
+      <div className="absolute inset-0 bg-industrial-grid opacity-[0.02] pointer-events-none" />
+      
+      <div className="container mx-auto px-4 py-8 max-w-[1600px] relative">
+        <DashboardHeader stats={stats} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2">
@@ -72,32 +152,39 @@ const Index = () => {
         </div>
 
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-foreground mb-2 flex items-center gap-3">
-            <div className="w-1 h-8 gradient-primary rounded-full" />
-            Employee Monitoring Panel
-          </h2>
-          <p className="text-muted-foreground ml-4">
-            Real-time monitoring with live camera feeds and performance tracking
-          </p>
+          <div className="flex items-center gap-4 mb-3">
+            <div className="w-1.5 h-10 gradient-primary rounded-full shadow-glow" />
+            <div>
+              <h2 className="text-2xl font-bold text-foreground tracking-tight">
+                {currentView === "overview" ? "Department Overview" : "Employee Monitoring"}
+              </h2>
+              <p className="text-sm text-muted-foreground font-medium">
+                {currentView === "overview" 
+                  ? "Select a department to view detailed employee monitoring"
+                  : "Real-time monitoring with live camera feeds and performance tracking"
+                }
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {employees.map((employee) => (
-            <EmployeeCard key={employee.id} {...employee} />
-          ))}
-        </div>
+        {/* Conditional rendering based on view */}
+        {currentView === "overview" ? (
+          <DepartmentOverview onDepartmentClick={handleDepartmentClick} />
+        ) : (
+          <EmployeeDetailView 
+            departmentId={currentView} 
+            onBack={handleBackToOverview}
+          />
+        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
           <div className="lg:col-span-2">
             <ActivityTimeline />
           </div>
           <div>
             <QuickActions />
-            <Link to="/view-log">
-              <Button className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-pink-600 text-white hover:shadow-lg transition-shadow">
-                View Assembly Log
-              </Button>
-            </Link>
           </div>
         </div>
       </div>

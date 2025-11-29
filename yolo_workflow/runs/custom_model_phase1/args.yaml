@@ -1,7 +1,7 @@
 task: detect
 mode: train
 model: yolov8n.pt
-data: /home/noclout/employee-monitor-view/yolo_workflow/data.yaml
+data: /Users/sassada/Documents/Hackathon/employee-monitor-view/yolo_workflow/data.yaml
 epochs: 10
 time: null
 patience: 10
@@ -9,10 +9,10 @@ batch: 4
 imgsz: 640
 save: true
 save_period: -1
-cache: false
+cache: true
 device: cpu
 workers: 8
-project: /home/noclout/employee-monitor-view/yolo_workflow/runs
+project: /Users/sassada/Documents/Hackathon/employee-monitor-view/yolo_workflow/runs
 name: custom_model_phase1
 exist_ok: true
 pretrained: true
@@ -103,4 +103,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: /home/noclout/employee-monitor-view/yolo_workflow/runs/custom_model_phase1
+save_dir: /Users/sassada/Documents/Hackathon/employee-monitor-view/yolo_workflow/runs/custom_model_phase1

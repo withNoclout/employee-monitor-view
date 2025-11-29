@@ -16,9 +16,13 @@ const app = express();
 const port = 3000;
 
 // Python interpreter path (project venv)
-const PYTHON_PATH = '/home/noclout/employee-monitor-view/venv/bin/python3';
+const PYTHON_PATH = path.join(__dirname, 'venv/bin/python3');
 const TRAIN_SCRIPT = path.join(__dirname, 'yolo_workflow', 'scripts', 'train_model.py');
 const GESTURE_TRAIN_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
+
+// Track active training processes
+let activeTrainingProcess = null;
+let activeGestureTrainingProcess = null;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -28,8 +32,10 @@ const upload = multer({ dest: 'uploads/' });
 
 // Ensure directories exist
 const YOLO_WORKFLOW_DIR = path.join(__dirname, 'yolo_workflow');
-const RAW_DATA_DIR = path.join(YOLO_WORKFLOW_DIR, 'raw_data');
 const CLASSES_FILE = path.join(YOLO_WORKFLOW_DIR, 'classes.txt');
+const TRAINED_CLASSES_FILE = path.join(YOLO_WORKFLOW_DIR, 'trained_classes.txt');
+const RAW_DATA_DIR = path.join(YOLO_WORKFLOW_DIR, 'raw_data');
+const TRAINED_MODEL_PATH = path.join(YOLO_WORKFLOW_DIR, 'runs', 'custom_model', 'weights', 'best.pt');
 
 // Gesture workflow directories
 const GESTURE_WORKFLOW_DIR = path.join(__dirname, 'gesture_workflow');
@@ -79,6 +85,107 @@ app.get('/api/logs', async (req, res) => {
     }
 });
 
+// New endpoint to get training logs
+app.get('/api/train/logs', (req, res) => {
+    try {
+        const logs = fs.readFileSync(TRAINING_LOG_FILE, 'utf-8');
+        res.json({ logs });
+    } catch (err) {
+        console.error('Error reading training log file:', err);
+        res.status(500).json({ error: 'Failed to read logs' });
+    }
+});
+
+// New endpoint to provide parsed loss metrics for the graph
+app.get('/api/train/metrics', (req, res) => {
+    try {
+        const logContent = fs.readFileSync(TRAINING_LOG_FILE, 'utf-8');
+        const lines = logContent.split('\n');
+        const metrics = [];
+        const progressPrefix = '[PROGRESS]';
+        let isTrainingComplete = false;
+        for (const line of lines) {
+            if (line.includes('[TRAINING_COMPLETE]')) {
+                isTrainingComplete = true;
+            }
+            if (line.includes(progressPrefix)) {
+                try {
+                    const jsonStr = line.split(progressPrefix)[1];
+                    const data = JSON.parse(jsonStr);
+
+                    if (data.type === 'epoch_end') {
+                        metrics.push({
+                            epoch: data.epoch,
+                            totalEpochs: data.total_epochs,
+                            loss: data.total_loss,
+                            box_loss: data.box_loss,
+                            cls_loss: data.cls_loss,
+                            dfl_loss: data.dfl_loss,
+                            mAP50: 0,
+                            mAP50_95: 0
+                        });
+                    } else if (data.type === 'validation' && metrics.length > 0) {
+                        const lastMetric = metrics[metrics.length - 1];
+                        lastMetric.mAP50 = data.mAP50;
+                        lastMetric.mAP50_95 = data.mAP50_95;
+                    }
+                } catch (e) {
+                    console.error('Error parsing log line:', e);
+                }
+            }
+        }
+        res.json({ metrics, isTrainingComplete });
+    } catch (err) {
+        console.error('Error parsing training metrics:', err);
+        res.status(500).json({ error: 'Failed to parse metrics' });
+    }
+});
+
+// Serve training results static files
+app.use('/api/training-results', express.static(path.join(__dirname, 'yolo_workflow/runs/custom_model')));
+
+app.get('/api/train/summary', (req, res) => {
+    try {
+        const resultsPath = path.join(__dirname, 'yolo_workflow/runs/custom_model/results.csv');
+        if (!fs.existsSync(resultsPath)) {
+            return res.status(404).json({ error: 'Results not found' });
+        }
+
+        const content = fs.readFileSync(resultsPath, 'utf-8');
+        const lines = content.trim().split('\n');
+
+        if (lines.length < 2) {
+            return res.status(400).json({ error: 'No data in results file' });
+        }
+
+        // Parse header to find column indices
+        const headers = lines[0].split(',').map(h => h.trim());
+        const lastLine = lines[lines.length - 1].split(',').map(v => v.trim());
+
+        // Helper to get value by partial header match
+        const getValue = (search) => {
+            const index = headers.findIndex(h => h.includes(search));
+            return index !== -1 ? parseFloat(lastLine[index]) : 0;
+        };
+
+        const summary = {
+            precision: getValue('metrics/precision(B)'),
+            recall: getValue('metrics/recall(B)'),
+            mAP50: getValue('metrics/mAP50(B)'),
+            mAP50_95: getValue('metrics/mAP50-95(B)'),
+            box_loss: getValue('train/box_loss'),
+            cls_loss: getValue('train/cls_loss'),
+            dfl_loss: getValue('train/dfl_loss'),
+            epoch: parseInt(lastLine[0])
+        };
+
+        res.json(summary);
+    } catch (err) {
+        console.error('Error fetching training summary:', err);
+        res.status(500).json({ error: 'Failed to fetch summary' });
+    }
+});
+
 // --- End Log Service Endpoints ---
 
 app.post('/api/save-dataset', upload.single('dataset'), (req, res) => {
@@ -124,12 +231,44 @@ app.post('/api/save-dataset', upload.single('dataset'), (req, res) => {
             console.warn('Warning: Could not delete uploaded file:', cleanupError);
         }
 
+        // Extract unique labels from the new annotations
+        const newLabels = new Set();
+        const annotationsFile = path.join(batchDir, 'dataset', 'annotations.json');
+
+        if (fs.existsSync(annotationsFile)) {
+            try {
+                const datasetData = JSON.parse(fs.readFileSync(annotationsFile, 'utf-8'));
+                datasetData.forEach(item => {
+                    if (item.annotations) {
+                        item.annotations.forEach(ann => {
+                            if (ann.label) newLabels.add(ann.label);
+                        });
+                    }
+                });
+            } catch (e) {
+                console.error("Error reading annotations.json:", e);
+            }
+        }
+
+        // Update trained_classes.txt: Remove classes that have new data
+        if (newLabels.size > 0 && fs.existsSync(TRAINED_CLASSES_FILE)) {
+            const trainedClasses = fs.readFileSync(TRAINED_CLASSES_FILE, 'utf-8')
+                .split('\n')
+                .map(c => c.trim())
+                .filter(c => c);
+
+            const updatedTrainedClasses = trainedClasses.filter(c => !newLabels.has(c));
+
+            if (updatedTrainedClasses.length !== trainedClasses.length) {
+                fs.writeFileSync(TRAINED_CLASSES_FILE, updatedTrainedClasses.join('\n'));
+                console.log(`[API] Updated trained classes. Removed: ${[...newLabels].filter(l => trainedClasses.includes(l)).join(', ')}`);
+            }
+        }
+
         res.json({ message: 'Dataset saved and processed successfully', batch: batchName });
     } catch (error) {
         console.error('Error processing zip:', error);
-        // If we have a batchDir but failed, we might want to clean it up? 
-        // For now, keep it for debugging.
-        res.status(500).send('Error processing dataset: ' + error.message);
+        res.status(500).json({ error: 'Failed to process dataset' });
     }
 });
 
@@ -183,7 +322,6 @@ function updateClassesAndLabels(batchDir) {
 
 app.get('/api/classes', (req, res) => {
     try {
-        const classes = [];
         if (fs.existsSync(CLASSES_FILE)) {
             const classNames = fs.readFileSync(CLASSES_FILE, 'utf-8')
                 .split('\n')
@@ -216,17 +354,26 @@ app.get('/api/classes', (req, res) => {
                 });
             }
 
-            classNames.forEach((name, index) => {
-                classes.push({
-                    id: index.toString(),
-                    name: name,
-                    count: counts[index],
-                    isTrained: false, // Default for now
-                    includeInTraining: true
-                });
-            });
+            // Check which classes are actually trained
+            let trainedClasses = [];
+            if (fs.existsSync(TRAINED_MODEL_PATH) && fs.existsSync(TRAINED_CLASSES_FILE)) {
+                trainedClasses = fs.readFileSync(TRAINED_CLASSES_FILE, 'utf-8')
+                    .split('\n')
+                    .map(c => c.trim())
+                    .filter(c => c);
+            }
+
+            const classesWithStats = classNames.map((name, index) => ({
+                id: index.toString(),
+                name,
+                count: counts[index],
+                isTrained: trainedClasses.includes(name)
+            }));
+
+            res.json(classesWithStats);
+        } else {
+            res.json([]);
         }
-        res.json(classes);
     } catch (error) {
         console.error('Error fetching classes:', error);
         res.status(500).send('Error fetching classes');
@@ -280,36 +427,86 @@ app.post('/api/yolo/save-annotation', (req, res) => {
     }
 });
 
+// Log file path
+const TRAINING_LOG_FILE = path.join(__dirname, 'training.log');
+
 app.post('/api/train', (req, res) => {
     console.log('Starting training process...');
 
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Transfer-Encoding', 'chunked');
+    // Reset log file
+    fs.writeFileSync(TRAINING_LOG_FILE, '');
+
+    console.log(`[API] Starting training...`);
+    console.log(`[API] Python Path: ${PYTHON_PATH}`);
+    console.log(`[API] Script Path: ${TRAIN_SCRIPT}`);
 
     const pythonProcess = spawn(PYTHON_PATH, [TRAIN_SCRIPT]);
+    activeTrainingProcess = pythonProcess;
 
+    // Stream output to log file
+    const logStream = fs.createWriteStream(TRAINING_LOG_FILE, { flags: 'a' });
+
+    pythonProcess.stdout.pipe(logStream);
+    pythonProcess.stderr.pipe(logStream);
+
+    // Concise logging to server console
     pythonProcess.stdout.on('data', (data) => {
-        const msg = data.toString();
-        console.log(`[Train]: ${msg}`);
-        res.write(msg);
+        const lines = data.toString().split('\n');
+        for (const line of lines) {
+            if (line.includes('[PROGRESS]')) {
+                try {
+                    const jsonStr = line.split('[PROGRESS]')[1];
+                    const metrics = JSON.parse(jsonStr);
+
+                    if (metrics.type === 'epoch_end') {
+                        console.log(`[Training] Epoch ${metrics.epoch}/${metrics.total_epochs} - Loss: ${metrics.total_loss.toFixed(4)}`);
+                    } else if (metrics.type === 'validation') {
+                        console.log(`[Training] Validation - mAP50: ${(metrics.mAP50 * 100).toFixed(1)}%, mAP50-95: ${(metrics.mAP50_95 * 100).toFixed(1)}%`);
+                    }
+                } catch (e) {
+                    // Ignore parsing errors for partial lines
+                }
+            }
+        }
     });
 
-    pythonProcess.stderr.on('data', (data) => {
-        const msg = data.toString();
-        console.error(`[Train Error]: ${msg}`);
-        res.write(msg);
+    pythonProcess.on('error', (err) => {
+        console.error('[API] Failed to start subprocess:', err);
+        fs.appendFileSync(TRAINING_LOG_FILE, `\n[TRAINING_FAILED] Spawn Error: ${err.message}\n`);
     });
 
     pythonProcess.on('close', (code) => {
+        activeTrainingProcess = null;
         console.log(`Training process exited with code ${code}`);
         if (code === 0) {
-            res.write('\n[TRAINING_COMPLETE]\n');
+            fs.appendFileSync(TRAINING_LOG_FILE, '\n[TRAINING_COMPLETE]\n');
         } else {
-            res.write(`\n[TRAINING_FAILED] Code: ${code}\n`);
+            fs.appendFileSync(TRAINING_LOG_FILE, `\n[TRAINING_FAILED] Code: ${code}\n`);
         }
-        res.end();
     });
+
+    // Return immediately
+    res.json({ message: 'Training started', logFile: TRAINING_LOG_FILE });
+});
+
+app.get('/api/train/logs', (req, res) => {
+    if (!fs.existsSync(TRAINING_LOG_FILE)) {
+        return res.json({ logs: '' });
+    }
+    const logs = fs.readFileSync(TRAINING_LOG_FILE, 'utf8');
+    res.json({ logs });
+});
+
+
+app.post('/api/train/cancel', (req, res) => {
+    if (activeTrainingProcess) {
+        console.log('Cancelling training process...');
+        activeTrainingProcess.kill();
+        activeTrainingProcess = null;
+        res.json({ message: 'Training cancelled' });
+    } else {
+        res.status(400).json({ message: 'No active training process' });
+    }
 });
 
 app.listen(port, () => {
@@ -603,36 +800,53 @@ app.delete('/api/gestures/sequences/:className/:sequenceId', (req, res) => {
 app.post('/api/gestures/train', (req, res) => {
     console.log('Starting gesture model training...');
 
-    // Set headers for streaming
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Transfer-Encoding', 'chunked');
+    // Reset log file
+    fs.writeFileSync(TRAINING_LOG_FILE, '');
+
+    console.log(`[API] Starting gesture training...`);
+    console.log(`[API] Python Path: ${PYTHON_PATH}`);
+    console.log(`[API] Script Path: ${GESTURE_TRAIN_SCRIPT}`);
 
     const pythonProcess = spawn(PYTHON_PATH, [GESTURE_TRAIN_SCRIPT, '--train']);
+    activeGestureTrainingProcess = pythonProcess;
 
-    pythonProcess.stdout.on('data', (data) => {
-        const msg = data.toString();
-        console.log(`[Gesture Train]: ${msg}`);
-        res.write(msg);
-    });
+    // Stream output to log file
+    const logStream = fs.createWriteStream(TRAINING_LOG_FILE, { flags: 'a' });
 
-    pythonProcess.stderr.on('data', (data) => {
-        const msg = data.toString();
-        console.error(`[Gesture Train Error]: ${msg}`);
-        res.write(msg);
+    pythonProcess.stdout.pipe(logStream);
+    pythonProcess.stderr.pipe(logStream);
+
+    pythonProcess.on('error', (err) => {
+        console.error('[API] Failed to start gesture subprocess:', err);
+        fs.appendFileSync(TRAINING_LOG_FILE, `\n[TRAINING_FAILED] Spawn Error: ${err.message}\n`);
     });
 
     pythonProcess.on('close', (code) => {
+        activeGestureTrainingProcess = null;
         console.log(`Gesture training process exited with code ${code}`);
         if (code === 0) {
-            res.write('\n[TRAINING_COMPLETE]\n');
+            fs.appendFileSync(TRAINING_LOG_FILE, '\n[TRAINING_COMPLETE]\n');
             // Reload gesture inference process with new model
             console.log('[Gesture] Reloading inference process after training...');
             startGestureProcess();
         } else {
-            res.write(`\n[TRAINING_FAILED] Code: ${code}\n`);
+            fs.appendFileSync(TRAINING_LOG_FILE, `\n[TRAINING_FAILED] Code: ${code}\n`);
         }
-        res.end();
     });
+
+    // Return immediately
+    res.json({ message: 'Gesture training started', logFile: TRAINING_LOG_FILE });
+});
+
+app.post('/api/gestures/train/cancel', (req, res) => {
+    if (activeGestureTrainingProcess) {
+        console.log('Cancelling gesture training process...');
+        activeGestureTrainingProcess.kill();
+        activeGestureTrainingProcess = null;
+        res.json({ message: 'Gesture training cancelled' });
+    } else {
+        res.status(400).json({ message: 'No active gesture training process' });
+    }
 });
 
 // Get gesture model info
@@ -828,3 +1042,141 @@ app.post('/api/gestures/classify', async (req, res) => {
 app.use('/gesture-models', express.static(path.join(__dirname, 'gesture_workflow', 'models')));
 
 
+// Delete class and associated data
+app.delete('/api/classes/:className', (req, res) => {
+    try {
+        const className = req.params.className;
+        if (!fs.existsSync(CLASSES_FILE)) {
+            return res.status(404).json({ error: 'Classes file not found' });
+        }
+
+        let classes = fs.readFileSync(CLASSES_FILE, 'utf-8')
+            .split('\n')
+            .map(c => c.trim())
+            .filter(c => c);
+
+        const classIndex = classes.indexOf(className);
+        if (classIndex === -1) {
+            return res.status(404).json({ error: 'Class not found' });
+        }
+
+        // Remove class from classes.txt
+        classes.splice(classIndex, 1);
+        fs.writeFileSync(CLASSES_FILE, classes.join('\n'));
+
+        // Remove from trained_classes.txt if present
+        if (fs.existsSync(TRAINED_CLASSES_FILE)) {
+            let trainedClasses = fs.readFileSync(TRAINED_CLASSES_FILE, 'utf-8')
+                .split('\n')
+                .map(c => c.trim())
+                .filter(c => c);
+
+            const newTrainedClasses = trainedClasses.filter(c => c !== className);
+            if (newTrainedClasses.length !== trainedClasses.length) {
+                fs.writeFileSync(TRAINED_CLASSES_FILE, newTrainedClasses.join('\n'));
+            }
+        }
+
+        // Process all label files in raw_data
+        let deletedImagesCount = 0;
+
+        // Helper to recursively find all .txt files
+        function processDirectory(dir) {
+            const files = fs.readdirSync(dir);
+
+            files.forEach(file => {
+                const filePath = path.join(dir, file);
+                const stat = fs.statSync(filePath);
+
+                if (stat.isDirectory()) {
+                    processDirectory(filePath);
+                } else if (file.endsWith('.txt')) {
+                    // It's a label file
+                    let content = fs.readFileSync(filePath, 'utf-8');
+                    let lines = content.split('\n').filter(l => l.trim());
+                    let newLines = [];
+                    let hasChanges = false;
+                    let remainingLabels = 0;
+
+                    lines.forEach(line => {
+                        const parts = line.trim().split(' ');
+                        const clsId = parseInt(parts[0]);
+
+                        if (isNaN(clsId)) return; // Skip invalid lines
+
+                        if (clsId === classIndex) {
+                            // This is the deleted class - remove it
+                            hasChanges = true;
+                        } else if (clsId > classIndex) {
+                            // Shift ID down
+                            parts[0] = (clsId - 1).toString();
+                            newLines.push(parts.join(' '));
+                            hasChanges = true;
+                            remainingLabels++;
+                        } else {
+                            // Keep as is
+                            newLines.push(line);
+                            remainingLabels++;
+                        }
+                    });
+
+                    if (hasChanges) {
+                        if (remainingLabels === 0) {
+                            // No labels left, delete label file AND image
+                            fs.unlinkSync(filePath);
+
+                            // Try to find and delete the corresponding image
+                            // Assuming image has same basename and is in ../images/ or same dir
+                            const imageExts = ['.jpg', '.jpeg', '.png'];
+                            const baseName = path.basename(file, '.txt');
+                            const dirName = path.dirname(filePath);
+
+                            // Check same dir
+                            let imageDeleted = false;
+                            for (const ext of imageExts) {
+                                const imgPath = path.join(dirName, baseName + ext);
+                                if (fs.existsSync(imgPath)) {
+                                    fs.unlinkSync(imgPath);
+                                    imageDeleted = true;
+                                    break;
+                                }
+                            }
+
+                            // Check ../images/ dir (standard YOLO structure)
+                            if (!imageDeleted) {
+                                const parentDir = path.dirname(dirName);
+                                const imagesDir = path.join(parentDir, 'images');
+                                if (fs.existsSync(imagesDir)) {
+                                    for (const ext of imageExts) {
+                                        const imgPath = path.join(imagesDir, baseName + ext);
+                                        if (fs.existsSync(imgPath)) {
+                                            fs.unlinkSync(imgPath);
+                                            imageDeleted = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            deletedImagesCount++;
+                        } else {
+                            // Update label file with shifted IDs
+                            fs.writeFileSync(filePath, newLines.join('\n'));
+                        }
+                    }
+                }
+            });
+        }
+
+        if (fs.existsSync(RAW_DATA_DIR)) {
+            processDirectory(RAW_DATA_DIR);
+        }
+
+        console.log(`[API] Deleted class '${className}'. Removed ${deletedImagesCount} images.`);
+        res.json({ success: true, message: `Class deleted. ${deletedImagesCount} images removed.` });
+
+    } catch (error) {
+        console.error('Error deleting class:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
