@@ -7,6 +7,8 @@ import AdmZip from 'adm-zip';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 
+import { appendLog, readLogs } from './src/server/logService.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -43,27 +45,63 @@ if (!fs.existsSync(RAW_DATA_DIR)) {
     fs.mkdirSync(RAW_DATA_DIR, { recursive: true });
 }
 
+// --- Log Service Endpoints ---
+
+app.post('/api/logs', async (req, res) => {
+    try {
+        const success = await appendLog(req.body);
+        if (success) {
+            res.status(201).json({ message: 'Log entry created' });
+        } else {
+            res.status(500).json({ error: 'Failed to write log entry' });
+        }
+    } catch (error) {
+        console.error('API Error appending log:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/logs', async (req, res) => {
+    try {
+        const { component, user, startDate, endDate, limit, offset } = req.query;
+        const result = await readLogs({
+            component: component,
+            user: user,
+            startDate: startDate,
+            endDate: endDate,
+            limit: limit ? parseInt(limit) : 50,
+            offset: offset ? parseInt(offset) : 0
+        });
+        res.json(result);
+    } catch (error) {
+        console.error('API Error reading logs:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- End Log Service Endpoints ---
+
 app.post('/api/save-dataset', upload.single('dataset'), (req, res) => {
     if (!req.file) {
         return res.status(400).send('No file uploaded.');
     }
 
     console.log(`Received file: ${req.file.originalname}`);
-    
+
     try {
         const zip = new AdmZip(req.file.path);
         const batchName = `batch_${Date.now()}`;
         const batchDir = path.join(RAW_DATA_DIR, batchName);
-        
+
         fs.mkdirSync(batchDir, { recursive: true });
-        
+
         // Extract everything
         zip.extractAllTo(batchDir, true);
-        
+
         // Process extracted files to match YOLO structure
         // The zip contains dataset/images and dataset/labels
         // We want to move them to batchDir/images and batchDir/labels
-        
+
         const extractedRoot = path.join(batchDir, 'dataset');
         if (fs.existsSync(extractedRoot)) {
             // Move contents up
@@ -107,22 +145,22 @@ function updateClassesAndLabels(batchDir) {
     const labelsDir = path.join(batchDir, 'labels');
     if (fs.existsSync(labelsDir)) {
         const files = fs.readdirSync(labelsDir);
-        
+
         files.forEach(file => {
             if (!file.endsWith('.txt')) return;
-            
+
             const filePath = path.join(labelsDir, file);
             const content = fs.readFileSync(filePath, 'utf-8');
             const lines = content.split('\n');
             const newLines = [];
-            
+
             lines.forEach(line => {
                 if (!line.trim()) return;
-                
+
                 const parts = line.trim().split(' ');
                 const labelName = parts[0]; // Currently string
                 const coords = parts.slice(1).join(' ');
-                
+
                 // Find or add class
                 let classIdx = classes.findIndex(c => c.toLowerCase() === labelName.toLowerCase());
                 if (classIdx === -1) {
@@ -130,15 +168,15 @@ function updateClassesAndLabels(batchDir) {
                     classIdx = classes.length - 1;
                     console.log(`New class added: ${labelName}`);
                 }
-                
+
                 newLines.push(`${classIdx} ${coords}`);
             });
-            
+
             // Rewrite file with IDs
             fs.writeFileSync(filePath, newLines.join('\n'));
         });
     }
-    
+
     // Save updated classes
     fs.writeFileSync(CLASSES_FILE, classes.join('\n'));
 }
@@ -151,7 +189,7 @@ app.get('/api/classes', (req, res) => {
                 .split('\n')
                 .map(c => c.trim())
                 .filter(c => c);
-            
+
             // Initialize counts
             const counts = new Array(classNames.length).fill(0);
 
@@ -199,7 +237,7 @@ app.get('/api/classes', (req, res) => {
 app.post('/api/yolo/save-annotation', (req, res) => {
     try {
         const { image, annotations } = req.body;
-        
+
         if (!image || !annotations || annotations.length === 0) {
             return res.status(400).json({ error: 'Image and annotations required' });
         }
@@ -225,13 +263,13 @@ app.post('/api/yolo/save-annotation', (req, res) => {
             // YOLO format: class_id center_x center_y width height (all normalized 0-1)
             return `${ann.classId} ${ann.x.toFixed(6)} ${ann.y.toFixed(6)} ${ann.width.toFixed(6)} ${ann.height.toFixed(6)}`;
         }).join('\n');
-        
+
         fs.writeFileSync(path.join(labelsDir, labelName), labelContent);
 
         console.log(`[Annotate] Saved: ${imageName} with ${annotations.length} annotation(s)`);
-        
-        res.json({ 
-            success: true, 
+
+        res.json({
+            success: true,
             message: `Saved to ${batchName}`,
             imagePath: path.join(imagesDir, imageName),
             labelPath: path.join(labelsDir, labelName)
@@ -244,13 +282,13 @@ app.post('/api/yolo/save-annotation', (req, res) => {
 
 app.post('/api/train', (req, res) => {
     console.log('Starting training process...');
-    
+
     // Set headers for streaming
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Transfer-Encoding', 'chunked');
 
     const pythonProcess = spawn(PYTHON_PATH, [TRAIN_SCRIPT]);
-    
+
     pythonProcess.stdout.on('data', (data) => {
         const msg = data.toString();
         console.log(`[Train]: ${msg}`);
@@ -284,7 +322,7 @@ app.use('/models', express.static(path.join(__dirname, 'yolo_workflow', 'runs', 
 // Detection endpoint - accepts base64 image, returns detections
 app.post('/api/detect', express.json({ limit: '10mb' }), async (req, res) => {
     const { image } = req.body; // base64 encoded image
-    
+
     if (!image) {
         return res.status(400).json({ error: 'No image provided' });
     }
@@ -297,31 +335,31 @@ app.post('/api/detect', express.json({ limit: '10mb' }), async (req, res) => {
 
         // Run detection script
         const detectScript = path.join(__dirname, 'yolo_workflow', 'scripts', 'detect.py');
-        
+
         const result = await new Promise((resolve, reject) => {
             const proc = spawn(PYTHON_PATH, [detectScript, tempPath]);
             let output = '';
             let error = '';
-            
+
             proc.stdout.on('data', (data) => {
                 output += data.toString();
             });
-            
+
             proc.stderr.on('data', (data) => {
                 error += data.toString();
             });
-            
+
             proc.on('close', (code) => {
                 // Clean up temp file
-                try { fs.unlinkSync(tempPath); } catch(e) {}
-                
+                try { fs.unlinkSync(tempPath); } catch (e) { }
+
                 if (code === 0) {
                     try {
                         // Try to parse just the last line (in case of warnings)
                         const lines = output.trim().split('\n');
                         const jsonLine = lines[lines.length - 1];
                         resolve(JSON.parse(jsonLine));
-                    } catch(e) {
+                    } catch (e) {
                         console.error('Parse error. Raw output:', output);
                         console.error('Stderr:', error);
                         reject(new Error('Failed to parse detection output: ' + output.substring(0, 200)));
@@ -359,33 +397,33 @@ function saveGestureClasses(data) {
 app.get('/api/gestures/classes', (req, res) => {
     try {
         const classData = loadGestureClasses();
-        
+
         // Count sequences per class
         const classesWithCounts = classData.classes.map(cls => {
             const classDir = path.join(GESTURES_DIR, cls.name);
             let sequenceCount = 0;
             let totalFrames = 0;
-            
+
             if (fs.existsSync(classDir)) {
                 const files = fs.readdirSync(classDir).filter(f => f.endsWith('.json'));
                 sequenceCount = files.length;
-                
+
                 // Count total frames across all sequences
                 files.forEach(file => {
                     try {
                         const seq = JSON.parse(fs.readFileSync(path.join(classDir, file), 'utf-8'));
                         totalFrames += seq.frames?.length || 0;
-                    } catch (e) {}
+                    } catch (e) { }
                 });
             }
-            
+
             return {
                 ...cls,
                 sequenceCount,
                 totalFrames
             };
         });
-        
+
         res.json(classesWithCounts);
     } catch (error) {
         console.error('Error fetching gesture classes:', error);
@@ -400,21 +438,21 @@ app.post('/api/gestures/classes', (req, res) => {
         if (!name) {
             return res.status(400).json({ error: 'Class name required' });
         }
-        
+
         const classData = loadGestureClasses();
-        
+
         // Check for duplicate
         const safeName = name.toLowerCase().replace(/\s+/g, '_');
         if (classData.classes.some(c => c.name === safeName)) {
             return res.status(400).json({ error: 'Class already exists' });
         }
-        
+
         // Create class directory
         const classDir = path.join(GESTURES_DIR, safeName);
         if (!fs.existsSync(classDir)) {
             fs.mkdirSync(classDir, { recursive: true });
         }
-        
+
         // Add to classes
         const newClass = {
             id: `gesture_${Date.now()}`,
@@ -423,11 +461,11 @@ app.post('/api/gestures/classes', (req, res) => {
             duration: duration || 2, // Default 2 seconds
             createdAt: new Date().toISOString()
         };
-        
+
         classData.classes.push(newClass);
         if (!classData.created_at) classData.created_at = new Date().toISOString();
         saveGestureClasses(classData);
-        
+
         res.json(newClass);
     } catch (error) {
         console.error('Error creating gesture class:', error);
@@ -440,15 +478,15 @@ app.delete('/api/gestures/classes/:className', (req, res) => {
     try {
         const { className } = req.params;
         const classData = loadGestureClasses();
-        
+
         // Remove from classes list
         classData.classes = classData.classes.filter(c => c.name !== className);
         saveGestureClasses(classData);
-        
+
         // Optionally delete data directory (keeping for safety, just removing from training)
         // const classDir = path.join(GESTURES_DIR, className);
         // if (fs.existsSync(classDir)) { fs.rmSync(classDir, { recursive: true }); }
-        
+
         res.json({ success: true });
     } catch (error) {
         console.error('Error deleting gesture class:', error);
@@ -460,30 +498,30 @@ app.delete('/api/gestures/classes/:className', (req, res) => {
 app.post('/api/gestures/sequences', (req, res) => {
     try {
         const { className, frames, metadata } = req.body;
-        
+
         if (!className || !frames || !Array.isArray(frames)) {
             return res.status(400).json({ error: 'className and frames array required' });
         }
-        
+
         const classData = loadGestureClasses();
         const safeName = className.toLowerCase().replace(/\s+/g, '_');
-        
+
         // Ensure class exists
         if (!classData.classes.some(c => c.name === safeName)) {
             return res.status(400).json({ error: 'Class does not exist' });
         }
-        
+
         // Create class directory if needed
         const classDir = path.join(GESTURES_DIR, safeName);
         if (!fs.existsSync(classDir)) {
             fs.mkdirSync(classDir, { recursive: true });
         }
-        
+
         // Generate sequence ID
         const existingFiles = fs.readdirSync(classDir).filter(f => f.endsWith('.json'));
         const sequenceNum = existingFiles.length + 1;
         const sequenceId = `sequence_${String(sequenceNum).padStart(3, '0')}`;
-        
+
         // Create sequence data
         const sequenceData = {
             class: safeName,
@@ -497,13 +535,13 @@ app.post('/api/gestures/sequences', (req, res) => {
                 ...metadata
             }
         };
-        
+
         // Save sequence
         const filePath = path.join(classDir, `${sequenceId}.json`);
         fs.writeFileSync(filePath, JSON.stringify(sequenceData, null, 2));
-        
+
         console.log(`Saved gesture sequence: ${safeName}/${sequenceId} (${frames.length} frames)`);
-        
+
         res.json({
             success: true,
             sequenceId,
@@ -521,11 +559,11 @@ app.get('/api/gestures/sequences/:className', (req, res) => {
     try {
         const { className } = req.params;
         const classDir = path.join(GESTURES_DIR, className);
-        
+
         if (!fs.existsSync(classDir)) {
             return res.json([]);
         }
-        
+
         const files = fs.readdirSync(classDir).filter(f => f.endsWith('.json'));
         const sequences = files.map(file => {
             const data = JSON.parse(fs.readFileSync(path.join(classDir, file), 'utf-8'));
@@ -536,7 +574,7 @@ app.get('/api/gestures/sequences/:className', (req, res) => {
                 duration_ms: data.metadata?.duration_ms || 0
             };
         });
-        
+
         res.json(sequences);
     } catch (error) {
         console.error('Error fetching sequences:', error);
@@ -549,11 +587,11 @@ app.delete('/api/gestures/sequences/:className/:sequenceId', (req, res) => {
     try {
         const { className, sequenceId } = req.params;
         const filePath = path.join(GESTURES_DIR, className, `${sequenceId}.json`);
-        
+
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }
-        
+
         res.json({ success: true });
     } catch (error) {
         console.error('Error deleting sequence:', error);
@@ -564,13 +602,13 @@ app.delete('/api/gestures/sequences/:className/:sequenceId', (req, res) => {
 // Train gesture model
 app.post('/api/gestures/train', (req, res) => {
     console.log('Starting gesture model training...');
-    
+
     // Set headers for streaming
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Transfer-Encoding', 'chunked');
 
     const pythonProcess = spawn(PYTHON_PATH, [GESTURE_TRAIN_SCRIPT, '--train']);
-    
+
     pythonProcess.stdout.on('data', (data) => {
         const msg = data.toString();
         console.log(`[Gesture Train]: ${msg}`);
@@ -602,11 +640,11 @@ app.get('/api/gestures/model', (req, res) => {
     try {
         const modelPath = path.join(GESTURE_WORKFLOW_DIR, 'models', 'gesture_model.pkl');
         const modelInfoPath = path.join(GESTURE_WORKFLOW_DIR, 'models', 'model_info.json');
-        
+
         if (!fs.existsSync(modelPath)) {
             return res.json({ exists: false });
         }
-        
+
         let modelInfo = { exists: true };
         if (fs.existsSync(modelInfoPath)) {
             modelInfo = {
@@ -614,7 +652,7 @@ app.get('/api/gestures/model', (req, res) => {
                 ...JSON.parse(fs.readFileSync(modelInfoPath, 'utf-8'))
             };
         }
-        
+
         res.json(modelInfo);
     } catch (error) {
         console.error('Error fetching model info:', error);
@@ -635,19 +673,19 @@ function startGestureProcess() {
     if (gestureInferenceProcess) {
         gestureInferenceProcess.kill();
     }
-    
+
     gestureProcessReady = false;
     gestureProcessClasses = [];
-    
+
     gestureInferenceProcess = spawn(PYTHON_PATH, [GESTURE_INFERENCE_SCRIPT, '--stream']);
-    
+
     let buffer = '';
-    
+
     gestureInferenceProcess.stdout.on('data', (data) => {
         buffer += data.toString();
         const lines = buffer.split('\n');
         buffer = lines.pop(); // Keep incomplete line in buffer
-        
+
         for (const line of lines) {
             if (!line.trim()) continue;
             try {
@@ -673,23 +711,23 @@ function startGestureProcess() {
             }
         }
     });
-    
+
     gestureInferenceProcess.stderr.on('data', (data) => {
         console.error('[Gesture Process Error]:', data.toString());
     });
-    
+
     gestureInferenceProcess.on('close', (code) => {
         console.log('[Gesture] Process closed with code:', code);
         gestureProcessReady = false;
         gestureInferenceProcess = null;
-        
+
         // Reject any pending classifications
         while (pendingClassifications.length > 0) {
             const { reject } = pendingClassifications.shift();
             reject(new Error('Gesture process closed'));
         }
     });
-    
+
     gestureInferenceProcess.on('error', (err) => {
         console.error('[Gesture] Process error:', err);
         gestureProcessReady = false;
@@ -712,11 +750,11 @@ app.post('/api/gestures/reload', (req, res) => {
 
 app.post('/api/gestures/classify', async (req, res) => {
     const { frames, threshold } = req.body;
-    
+
     if (!frames || !Array.isArray(frames)) {
         return res.status(400).json({ error: 'frames array required' });
     }
-    
+
     // Start process if not running
     if (!gestureInferenceProcess) {
         if (fs.existsSync(gestureModelPath)) {
@@ -730,11 +768,11 @@ app.post('/api/gestures/classify', async (req, res) => {
             return res.status(400).json({ error: 'Model not found. Please train first.' });
         }
     }
-    
+
     if (!gestureProcessReady) {
         return res.status(503).json({ error: 'Gesture process not ready' });
     }
-    
+
     // Debug: Log what we're sending
     console.log('[Gesture] ========== CLASSIFY REQUEST ==========');
     console.log('[Gesture] Frames count:', frames.length);
@@ -752,16 +790,16 @@ app.post('/api/gestures/classify', async (req, res) => {
             console.log('[Gesture] Left hand landmarks count:', f.left_hand.landmarks.length);
         }
     }
-    
+
     try {
         // Use persistent process - send request and wait for response
         const result = await new Promise((resolve, reject) => {
             // Add to pending queue
             pendingClassifications.push({ resolve, reject });
-            
+
             // Send classification request
             gestureInferenceProcess.stdin.write(JSON.stringify({ frames, threshold: threshold || 0.5 }) + '\n');
-            
+
             // Timeout after 5 seconds
             setTimeout(() => {
                 const idx = pendingClassifications.findIndex(p => p.resolve === resolve);
@@ -771,14 +809,14 @@ app.post('/api/gestures/classify', async (req, res) => {
                 }
             }, 5000);
         });
-        
+
         // Log the result
         console.log('[Gesture] ========== RESULT ==========');
         console.log('[Gesture] Predicted:', result.predicted_class);
         console.log('[Gesture] Confidence:', (result.confidence * 100).toFixed(1) + '%');
         console.log('[Gesture] All probs:', result.all_probs);
         console.log('[Gesture] ==============================');
-        
+
         res.json(result);
     } catch (error) {
         console.error('[Gesture] Classification error:', error);

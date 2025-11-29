@@ -61,7 +61,7 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-[1600px]">
         <DashboardHeader />
-        
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2">
             <PerformanceChart />
@@ -93,6 +93,11 @@ const Index = () => {
           </div>
           <div>
             <QuickActions />
+            <Link to="/view-log">
+              <Button className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-pink-600 text-white hover:shadow-lg transition-shadow">
+                View Assembly Log
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
