@@ -56,13 +56,13 @@ export const Navbar = () => {
             <div className={`w-10 h-10 rounded-lg gradient-primary shadow-industrial flex items-center justify-center transition-all duration-300 ${
               scrolled ? "scale-90" : "scale-100"
             }`}>
-              <img src="/logo.svg" alt="NextXO Logo" className="w-6 h-6" />
+              <img src="/logo.svg" alt="AlignWhat Logo" className="w-6 h-6" />
             </div>
             <div>
               <h1 className={`font-bold text-foreground tracking-tight transition-all duration-300 ${
                 scrolled ? "text-xl" : "text-2xl"
               }`}>
-                NextXO Monitor
+                AlignWhat Project
               </h1>
               <div className="flex items-center gap-2">
                 <div className="h-1 w-1 rounded-full bg-success animate-pulse" />
