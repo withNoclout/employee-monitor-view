@@ -1371,51 +1371,51 @@ const Training = () => {
 
           {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <Card>
+            <Card className="border-border/50 shadow-industrial">
               <CardContent className="p-6 flex items-center gap-4">
-                <div className="p-3 bg-primary/10 rounded-lg">
-                  <ImageIcon className="w-6 h-6 text-primary" />
+                <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                  <ImageIcon className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Images</p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Total Images</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">
                     {classes.reduce((acc, curr) => acc + curr.count, 0)}
                   </p>
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-border/50 shadow-industrial">
               <CardContent className="p-6 flex items-center gap-4">
-                <div className="p-3 bg-secondary/10 rounded-lg">
-                  <Tag className="w-6 h-6 text-secondary-foreground" />
+                <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                  <Tag className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Classes</p>
-                  <p className="text-2xl font-bold">{classes.length}</p>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Classes</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">{classes.length}</p>
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-border/50 shadow-industrial">
               <CardContent className="p-6 flex items-center gap-4">
-                <div className="p-3 bg-success/10 rounded-lg">
-                  <Database className="w-6 h-6 text-success" />
+                <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                  <Database className="w-5 h-5 text-success" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Trained Classes</p>
-                  <p className="text-2xl font-bold">
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Trained Classes</p>
+                  <p className="text-2xl font-bold tracking-tight tabular-nums">
                     {classes.filter(c => c.isTrained).length}
                   </p>
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-border/50 shadow-industrial">
               <CardContent className="p-6 flex items-center gap-4">
-                <div className="p-3 bg-warning/10 rounded-lg">
-                  <Play className="w-6 h-6 text-warning-foreground" />
+                <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                  <Play className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Training Status</p>
-                  <p className="text-2xl font-bold">{isTraining ? "Running" : "Idle"}</p>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Training Status</p>
+                  <p className="text-2xl font-bold tracking-tight">{isTraining ? "Running" : "Idle"}</p>
                 </div>
               </CardContent>
             </Card>
@@ -1424,12 +1424,12 @@ const Training = () => {
           {/* Main Content */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Upload Section (CNN) or Camera (KNN) */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
+            <Card className="lg:col-span-2 border-border/50 shadow-industrial">
+              <CardHeader className="border-b border-border/30">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>{activeTab === 'cnn' ? "Add New Samples" : "Live Camera Feed"}</CardTitle>
-                    <CardDescription>
+                    <CardTitle className="tracking-tight">{activeTab === 'cnn' ? "Add New Samples" : "Live Camera Feed"}</CardTitle>
+                    <CardDescription className="text-[11px]">
                       {activeTab === 'cnn' 
                         ? "Upload images or capture from webcam to label" 
                         : "Use your camera to capture movement gestures for training"}

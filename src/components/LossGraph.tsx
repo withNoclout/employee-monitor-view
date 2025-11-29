@@ -32,12 +32,13 @@ const LossGraph: React.FC<LossGraphProps> = ({
     const graphWidth = width - padding.left - padding.right;
     const graphHeight = height - padding.top - padding.bottom;
     
-    // Clear canvas
-    ctx.fillStyle = '#1a1a2e';
+    // Clear canvas with theme-aware background
+    const bgColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#09090b' : '#ffffff';
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, width, height);
     
-    // Draw grid
-    ctx.strokeStyle = '#2d2d44';
+    // Draw grid with theme-aware colors
+    ctx.strokeStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#27272a' : '#e4e4e7';
     ctx.lineWidth = 1;
     
     for (let i = 0; i <= 4; i++) {
@@ -56,8 +57,8 @@ const LossGraph: React.FC<LossGraphProps> = ({
       ctx.stroke();
     }
     
-    // Draw axes
-    ctx.strokeStyle = '#4a4a6a';
+    // Draw axes with theme-aware colors
+    ctx.strokeStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#3f3f46' : '#d4d4d8';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(padding.left, padding.top);
@@ -65,15 +66,15 @@ const LossGraph: React.FC<LossGraphProps> = ({
     ctx.lineTo(width - padding.right, height - padding.bottom);
     ctx.stroke();
     
-    // Title
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px Inter, sans-serif';
+    // Title with theme-aware colors
+    ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#fafafa' : '#09090b';
+    ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('Per-Epoch Loss', padding.left, 15);
     
     // X-axis label
-    ctx.fillStyle = '#8888aa';
-    ctx.font = '10px Inter, sans-serif';
+    ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#a1a1aa' : '#71717a';
+    ctx.font = '10px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Epoch', width / 2, height - 5);
     
@@ -90,10 +91,11 @@ const LossGraph: React.FC<LossGraphProps> = ({
       const minLoss = Math.min(...lossHistory) * 0.9;
       const lossRange = maxLoss - minLoss || 1;
       
-      // Gradient line
+      // Gradient line with primary color
+      const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
       const gradient = ctx.createLinearGradient(padding.left, 0, width - padding.right, 0);
-      gradient.addColorStop(0, '#6366f1');
-      gradient.addColorStop(1, '#22d3ee');
+      gradient.addColorStop(0, `hsl(${primaryColor})`);
+      gradient.addColorStop(1, `hsl(${primaryColor} / 0.6)`);
       
       ctx.strokeStyle = gradient;
       ctx.lineWidth = 2;
@@ -111,25 +113,26 @@ const LossGraph: React.FC<LossGraphProps> = ({
       });
       ctx.stroke();
       
-      // Draw current point (last)
+      // Draw current point (last) with primary color
       if (lossHistory.length > 0) {
         const lastLoss = lossHistory[lossHistory.length - 1];
         const x = padding.left + graphWidth * ((lossHistory.length - 1) / Math.max(lossHistory.length - 1, 1));
         const normalizedLoss = (lastLoss - minLoss) / lossRange;
         const y = padding.top + graphHeight * (1 - normalizedLoss);
         
-        ctx.fillStyle = '#22d3ee';
-        ctx.shadowColor = '#22d3ee';
-        ctx.shadowBlur = 10;
+        const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+        ctx.fillStyle = `hsl(${primaryColor})`;
+        ctx.shadowColor = `hsl(${primaryColor} / 0.4)`;
+        ctx.shadowBlur = 8;
         ctx.beginPath();
         ctx.arc(x, y, 5, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
       }
       
-      // Y-axis labels
-      ctx.fillStyle = '#8888aa';
-      ctx.font = '9px Inter, sans-serif';
+      // Y-axis labels with theme-aware colors
+      ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#a1a1aa' : '#71717a';
+      ctx.font = '9px system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'right';
       for (let i = 0; i <= 4; i++) {
         const lossValue = maxLoss - (lossRange / 4) * i;
@@ -148,8 +151,8 @@ const LossGraph: React.FC<LossGraphProps> = ({
         ctx.fillText(lossHistory.length.toString(), padding.left + graphWidth, height - padding.bottom + 12);
       }
     } else {
-      ctx.fillStyle = '#666';
-      ctx.font = '12px Inter, sans-serif';
+      ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#52525b' : '#a1a1aa';
+      ctx.font = '11px system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('Waiting for data...', width / 2, height / 2);
     }
@@ -170,12 +173,13 @@ const LossGraph: React.FC<LossGraphProps> = ({
     const graphWidth = width - padding.left - padding.right;
     const graphHeight = height - padding.top - padding.bottom;
     
-    // Clear canvas
-    ctx.fillStyle = '#1a1a2e';
+    // Clear canvas with theme-aware background
+    const bgColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#09090b' : '#ffffff';
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, width, height);
     
-    // Draw grid
-    ctx.strokeStyle = '#2d2d44';
+    // Draw grid with theme-aware colors
+    ctx.strokeStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#27272a' : '#e4e4e7';
     ctx.lineWidth = 1;
     
     for (let i = 0; i <= 4; i++) {
@@ -194,8 +198,8 @@ const LossGraph: React.FC<LossGraphProps> = ({
       ctx.stroke();
     }
     
-    // Draw axes
-    ctx.strokeStyle = '#4a4a6a';
+    // Draw axes with theme-aware colors
+    ctx.strokeStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#3f3f46' : '#d4d4d8';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(padding.left, padding.top);
@@ -203,15 +207,15 @@ const LossGraph: React.FC<LossGraphProps> = ({
     ctx.lineTo(width - padding.right, height - padding.bottom);
     ctx.stroke();
     
-    // Title
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px Inter, sans-serif';
+    // Title with theme-aware colors
+    ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#fafafa' : '#09090b';
+    ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('Progress vs Avg Loss', padding.left, 15);
     
     // X-axis label
-    ctx.fillStyle = '#8888aa';
-    ctx.font = '10px Inter, sans-serif';
+    ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#a1a1aa' : '#71717a';
+    ctx.font = '10px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Progress %', width / 2, height - 5);
     
@@ -242,8 +246,9 @@ const LossGraph: React.FC<LossGraphProps> = ({
         const minAvg = Math.min(...avgLosses.map(a => a.avgLoss)) * 0.9;
         const range = maxAvg - minAvg || 1;
         
-        // Draw progress line (target - straight diagonal)
-        ctx.strokeStyle = 'rgba(0, 255, 136, 0.3)';
+        // Draw progress line (target - straight diagonal) with theme-aware colors
+        const successColor = getComputedStyle(document.documentElement).getPropertyValue('--success').trim();
+        ctx.strokeStyle = `hsl(${successColor} / 0.3)`;
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
         ctx.beginPath();
@@ -254,17 +259,18 @@ const LossGraph: React.FC<LossGraphProps> = ({
         
         // Draw current progress vertical marker
         const progressX = padding.left + graphWidth * (progress / 100);
-        ctx.strokeStyle = 'rgba(0, 255, 136, 0.5)';
+        ctx.strokeStyle = `hsl(${successColor} / 0.5)`;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(progressX, padding.top);
         ctx.lineTo(progressX, height - padding.bottom);
         ctx.stroke();
         
-        // Draw avg loss curve
+        // Draw avg loss curve with primary color
+        const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
         const gradient = ctx.createLinearGradient(padding.left, 0, width - padding.right, 0);
-        gradient.addColorStop(0, '#f472b6');
-        gradient.addColorStop(1, '#a855f7');
+        gradient.addColorStop(0, `hsl(${primaryColor})`);
+        gradient.addColorStop(1, `hsl(${primaryColor} / 0.7)`);
         
         ctx.strokeStyle = gradient;
         ctx.lineWidth = 2;
@@ -282,23 +288,23 @@ const LossGraph: React.FC<LossGraphProps> = ({
         });
         ctx.stroke();
         
-        // Draw current point
+        // Draw current point with primary color (reuse variable)
         const lastPoint = avgLosses[avgLosses.length - 1];
         const x = padding.left + (graphWidth * lastPoint.progress / 100);
         const normalizedLoss = (lastPoint.avgLoss - minAvg) / range;
         const y = padding.top + graphHeight * (1 - normalizedLoss);
         
-        ctx.fillStyle = '#a855f7';
-        ctx.shadowColor = '#a855f7';
-        ctx.shadowBlur = 10;
+        ctx.fillStyle = `hsl(${primaryColor})`;
+        ctx.shadowColor = `hsl(${primaryColor} / 0.4)`;
+        ctx.shadowBlur = 8;
         ctx.beginPath();
         ctx.arc(x, y, 5, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
         
-        // Y-axis labels
-        ctx.fillStyle = '#8888aa';
-        ctx.font = '9px Inter, sans-serif';
+        // Y-axis labels with theme-aware colors
+        ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#a1a1aa' : '#71717a';
+        ctx.font = '9px system-ui, -apple-system, sans-serif';
         ctx.textAlign = 'right';
         for (let i = 0; i <= 4; i++) {
           const lossValue = maxAvg - (range / 4) * i;
@@ -315,8 +321,8 @@ const LossGraph: React.FC<LossGraphProps> = ({
         }
       }
     } else {
-      ctx.fillStyle = '#666';
-      ctx.font = '12px Inter, sans-serif';
+      ctx.fillStyle = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#52525b' : '#a1a1aa';
+      ctx.font = '11px system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('Waiting for data...', width / 2, height / 2);
     }
@@ -329,82 +335,114 @@ const LossGraph: React.FC<LossGraphProps> = ({
   const progress = totalEpochs > 0 ? Math.round((currentEpoch / totalEpochs) * 100) : 0;
   
   return (
-    <div className="loss-graph-container" style={{
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-      borderRadius: '12px',
-      padding: '16px',
-      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-      border: '1px solid #2d2d44'
+    <div className="loss-graph-container glass-effect shadow-industrial-lg" style={{
+      borderRadius: '8px',
+      padding: '20px',
+      border: '1px solid hsl(var(--border) / 0.4)'
     }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '12px'
+        marginBottom: '16px',
+        paddingBottom: '12px',
+        borderBottom: '1px solid hsl(var(--border) / 0.3)'
       }}>
         <div>
           <h3 style={{
             margin: 0,
-            color: '#fff',
-            fontSize: '14px',
-            fontWeight: 600
+            color: 'hsl(var(--foreground))',
+            fontSize: '16px',
+            fontWeight: 700,
+            letterSpacing: '-0.01em'
           }}>
             Training Progress
           </h3>
           <p style={{
-            margin: '2px 0 0 0',
-            color: '#8888aa',
-            fontSize: '11px'
+            margin: '4px 0 0 0',
+            color: 'hsl(var(--muted-foreground))',
+            fontSize: '11px',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
           }}>
             Phase {currentPhase}: {phaseDescription}
           </p>
         </div>
         
-        <div style={{ display: 'flex', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '20px' }}>
           <div style={{ textAlign: 'right' }}>
-            <span style={{ color: '#8888aa', fontSize: '10px' }}>Epoch</span>
-            <div style={{
-              color: '#00ff88',
-              fontSize: '16px',
+            <span style={{ 
+              color: 'hsl(var(--muted-foreground))', 
+              fontSize: '10px',
               fontWeight: 700,
-              fontFamily: 'monospace'
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em'
+            }}>Epoch</span>
+            <div style={{
+              color: 'hsl(var(--primary))',
+              fontSize: '18px',
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              marginTop: '2px'
             }}>
               {currentEpoch} / {totalEpochs}
             </div>
           </div>
           
           <div style={{ textAlign: 'right' }}>
-            <span style={{ color: '#8888aa', fontSize: '10px' }}>Current Loss</span>
-            <div style={{
-              color: '#22d3ee',
-              fontSize: '16px',
+            <span style={{ 
+              color: 'hsl(var(--muted-foreground))', 
+              fontSize: '10px',
               fontWeight: 700,
-              fontFamily: 'monospace'
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em'
+            }}>Current Loss</span>
+            <div style={{
+              color: 'hsl(var(--primary))',
+              fontSize: '18px',
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              marginTop: '2px'
             }}>
               {currentLoss.toFixed(4)}
             </div>
           </div>
           
           <div style={{ textAlign: 'right' }}>
-            <span style={{ color: '#8888aa', fontSize: '10px' }}>Avg Loss</span>
-            <div style={{
-              color: '#a855f7',
-              fontSize: '16px',
+            <span style={{ 
+              color: 'hsl(var(--muted-foreground))', 
+              fontSize: '10px',
               fontWeight: 700,
-              fontFamily: 'monospace'
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em'
+            }}>Avg Loss</span>
+            <div style={{
+              color: 'hsl(var(--primary) / 0.8)',
+              fontSize: '18px',
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              marginTop: '2px'
             }}>
               {avgLoss.toFixed(4)}
             </div>
           </div>
           
           <div style={{ textAlign: 'right' }}>
-            <span style={{ color: '#8888aa', fontSize: '10px' }}>Best Loss</span>
-            <div style={{
-              color: '#6bcb77',
-              fontSize: '16px',
+            <span style={{ 
+              color: 'hsl(var(--muted-foreground))', 
+              fontSize: '10px',
               fontWeight: 700,
-              fontFamily: 'monospace'
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em'
+            }}>Best Loss</span>
+            <div style={{
+              color: 'hsl(var(--success))',
+              fontSize: '18px',
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              marginTop: '2px'
             }}>
               {minLoss.toFixed(4)}
             </div>
@@ -414,18 +452,19 @@ const LossGraph: React.FC<LossGraphProps> = ({
       
       {/* Progress Bar */}
       <div style={{
-        height: '4px',
-        background: '#2d2d44',
-        borderRadius: '2px',
-        marginBottom: '12px',
+        height: '2px',
+        background: 'hsl(var(--muted) / 0.6)',
+        borderRadius: '1px',
+        marginBottom: '16px',
         overflow: 'hidden'
       }}>
         <div style={{
           height: '100%',
           width: `${progress}%`,
-          background: 'linear-gradient(90deg, #00ff88 0%, #00cc6a 100%)',
-          borderRadius: '2px',
-          transition: 'width 0.3s ease'
+          background: 'hsl(var(--primary))',
+          borderRadius: '1px',
+          transition: 'width 0.3s ease',
+          boxShadow: '0 0 8px hsl(var(--primary) / 0.4)'
         }} />
       </div>
       
@@ -433,13 +472,14 @@ const LossGraph: React.FC<LossGraphProps> = ({
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
-        gap: '12px'
+        gap: '16px'
       }}>
         {/* Graph 1: Per-Epoch Loss */}
         <div style={{
-          background: 'rgba(0,0,0,0.2)',
-          borderRadius: '8px',
-          padding: '8px'
+          background: 'hsl(var(--muted) / 0.2)',
+          borderRadius: '6px',
+          padding: '10px',
+          border: '1px solid hsl(var(--border) / 0.3)'
         }}>
           <canvas
             ref={epochCanvasRef}
@@ -455,9 +495,10 @@ const LossGraph: React.FC<LossGraphProps> = ({
         
         {/* Graph 2: Progress vs Avg Loss */}
         <div style={{
-          background: 'rgba(0,0,0,0.2)',
-          borderRadius: '8px',
-          padding: '8px'
+          background: 'hsl(var(--muted) / 0.2)',
+          borderRadius: '6px',
+          padding: '10px',
+          border: '1px solid hsl(var(--border) / 0.3)'
         }}>
           <canvas
             ref={progressCanvasRef}
@@ -476,22 +517,62 @@ const LossGraph: React.FC<LossGraphProps> = ({
       <div style={{
         display: 'flex',
         justifyContent: 'space-around',
-        marginTop: '12px',
-        padding: '8px',
-        background: 'rgba(0,0,0,0.2)',
-        borderRadius: '6px'
+        marginTop: '16px',
+        padding: '12px',
+        background: 'hsl(var(--muted) / 0.2)',
+        borderRadius: '6px',
+        border: '1px solid hsl(var(--border) / 0.3)'
       }}>
         <div style={{ textAlign: 'center' }}>
-          <span style={{ color: '#8888aa', fontSize: '10px', display: 'block' }}>Progress</span>
-          <span style={{ color: '#00ff88', fontSize: '13px', fontWeight: 600 }}>{progress}%</span>
+          <span style={{ 
+            color: 'hsl(var(--muted-foreground))', 
+            fontSize: '10px', 
+            display: 'block',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            marginBottom: '4px'
+          }}>Progress</span>
+          <span style={{ 
+            color: 'hsl(var(--primary))', 
+            fontSize: '14px', 
+            fontWeight: 700,
+            fontFamily: 'monospace'
+          }}>{progress}%</span>
         </div>
         <div style={{ textAlign: 'center' }}>
-          <span style={{ color: '#8888aa', fontSize: '10px', display: 'block' }}>Total Epochs</span>
-          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{totalEpochs}</span>
+          <span style={{ 
+            color: 'hsl(var(--muted-foreground))', 
+            fontSize: '10px', 
+            display: 'block',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            marginBottom: '4px'
+          }}>Total Epochs</span>
+          <span style={{ 
+            color: 'hsl(var(--foreground))', 
+            fontSize: '14px', 
+            fontWeight: 700,
+            fontFamily: 'monospace'
+          }}>{totalEpochs}</span>
         </div>
         <div style={{ textAlign: 'center' }}>
-          <span style={{ color: '#8888aa', fontSize: '10px', display: 'block' }}>Loss Reduction</span>
-          <span style={{ color: '#6bcb77', fontSize: '13px', fontWeight: 600 }}>
+          <span style={{ 
+            color: 'hsl(var(--muted-foreground))', 
+            fontSize: '10px', 
+            display: 'block',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            marginBottom: '4px'
+          }}>Loss Reduction</span>
+          <span style={{ 
+            color: 'hsl(var(--success))', 
+            fontSize: '14px', 
+            fontWeight: 700,
+            fontFamily: 'monospace'
+          }}>
             {lossHistory.length > 1 
               ? `${(((lossHistory[0] - currentLoss) / lossHistory[0]) * 100).toFixed(1)}%`
               : '0%'
