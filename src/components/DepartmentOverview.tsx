@@ -29,7 +29,7 @@ export const DepartmentOverview = ({ onDepartmentClick }: DepartmentOverviewProp
       activeEmployees: 423,
       avgPerformance: 92,
       status: "excellent",
-      color: "from-blue-500 to-blue-600",
+      color: "primary",
     },
     {
       id: "assembly",
@@ -39,7 +39,7 @@ export const DepartmentOverview = ({ onDepartmentClick }: DepartmentOverviewProp
       activeEmployees: 298,
       avgPerformance: 88,
       status: "good",
-      color: "from-purple-500 to-purple-600",
+      color: "primary",
     },
     {
       id: "maintenance",
@@ -49,7 +49,7 @@ export const DepartmentOverview = ({ onDepartmentClick }: DepartmentOverviewProp
       activeEmployees: 81,
       avgPerformance: 90,
       status: "excellent",
-      color: "from-orange-500 to-orange-600",
+      color: "primary",
     },
     {
       id: "quality",
@@ -59,7 +59,7 @@ export const DepartmentOverview = ({ onDepartmentClick }: DepartmentOverviewProp
       activeEmployees: 115,
       avgPerformance: 95,
       status: "excellent",
-      color: "from-green-500 to-green-600",
+      color: "primary",
     },
     {
       id: "logistics",
@@ -69,7 +69,7 @@ export const DepartmentOverview = ({ onDepartmentClick }: DepartmentOverviewProp
       activeEmployees: 87,
       avgPerformance: 85,
       status: "good",
-      color: "from-cyan-500 to-cyan-600",
+      color: "primary",
     },
     {
       id: "workforce",
@@ -79,7 +79,7 @@ export const DepartmentOverview = ({ onDepartmentClick }: DepartmentOverviewProp
       activeEmployees: 265,
       avgPerformance: 87,
       status: "good",
-      color: "from-indigo-500 to-indigo-600",
+      color: "primary",
     },
   ];
 
@@ -120,70 +120,70 @@ export const DepartmentOverview = ({ onDepartmentClick }: DepartmentOverviewProp
             transition={{ delay: index * 0.1 }}
           >
             <Card
-              className="cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-industrial-lg border-border group bg-card relative"
+              className="cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-industrial-lg border-border/50 group bg-card relative shadow-industrial"
               onClick={() => onDepartmentClick(dept.id)}
             >
-              {/* Status bar */}
-              <div className={`h-1 bg-gradient-to-r ${dept.color}`} />
+              {/* Subtle accent border */}
+              <div className="h-[2px] bg-gradient-to-r from-primary/30 via-primary/50 to-primary/30" />
               
               <CardContent className="p-6">
                 {/* Header */}
                 <div className="flex items-start justify-between mb-6">
                   <div className="flex items-center gap-4">
-                    <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${dept.color} flex items-center justify-center shadow-industrial relative overflow-hidden group-hover:scale-110 transition-transform duration-300`}>
-                      <div className="text-white relative z-10">
+                    <div className="w-14 h-14 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-industrial group-hover:border-primary/50 group-hover:bg-primary/5 transition-all duration-300">
+                      <div className="text-primary group-hover:scale-110 transition-transform duration-300">
                         {dept.icon}
                       </div>
                     </div>
                     <div>
-                      <h3 className="font-bold text-foreground text-lg mb-1">
+                      <h3 className="font-bold text-foreground text-lg mb-1.5 tracking-tight">
                         {dept.name}
                       </h3>
-                      <Badge className={`${getStatusColor(dept.status)} shadow-sm font-medium text-xs`}>
+                      <Badge className={`${getStatusColor(dept.status)} shadow-sm font-semibold text-[10px] uppercase tracking-wider px-2`}>
                         {getStatusText(dept.status)}
                       </Badge>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                  <ChevronRight className="w-5 h-5 text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-1 transition-all" />
                 </div>
 
                 {/* Stats Grid */}
-                <div className="space-y-4">
+                <div className="space-y-3.5">
                   {/* Employees */}
-                  <div className="bg-muted/20 rounded-lg p-3 border border-border/30">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <div className="glass-effect rounded-md p-3.5 border border-border/40 shadow-sm">
+                    <div className="flex justify-between items-center mb-2.5">
+                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
                         Employees
                       </span>
-                      <span className="text-sm font-bold text-foreground font-mono">
+                      <span className="text-sm font-bold text-foreground font-mono tabular-nums">
                         {dept.activeEmployees}/{dept.totalEmployees}
                       </span>
                     </div>
-                    <div className="w-full bg-muted rounded-full h-2 shadow-inner overflow-hidden">
+                    <div className="w-full bg-muted/60 rounded-sm h-1.5 shadow-inner overflow-hidden">
                       <div
-                        className={`h-2 rounded-full bg-gradient-to-r ${dept.color} transition-all duration-500`}
+                        className="h-1.5 rounded-sm bg-primary/80 transition-all duration-500 shadow-sm"
                         style={{ width: `${(dept.activeEmployees / dept.totalEmployees) * 100}%` }}
                       />
                     </div>
                   </div>
 
                   {/* Performance */}
-                  <div className="bg-muted/20 rounded-lg p-3 border border-border/30">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <div className="glass-effect rounded-md p-3.5 border border-border/40 shadow-sm">
+                    <div className="flex justify-between items-center mb-2.5">
+                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
                         Avg Performance
                       </span>
-                      <span className="text-sm font-bold text-foreground font-mono">
+                      <span className="text-sm font-bold text-foreground font-mono tabular-nums">
                         {dept.avgPerformance}%
                       </span>
                     </div>
-                    <div className="w-full bg-muted rounded-full h-2 shadow-inner overflow-hidden">
+                    <div className="w-full bg-muted/60 rounded-sm h-1.5 shadow-inner overflow-hidden">
                       <div
-                        className={`h-2 rounded-full ${
-                          dept.avgPerformance >= 90 ? "gradient-success" :
-                          dept.avgPerformance >= 80 ? "gradient-warning" :
-                          "gradient-danger"
-                        } transition-all duration-500`}
+                        className={`h-1.5 rounded-sm transition-all duration-500 shadow-sm ${
+                          dept.avgPerformance >= 90 ? "bg-success/80" :
+                          dept.avgPerformance >= 80 ? "bg-warning/80" :
+                          "bg-danger/80"
+                        }`}
                         style={{ width: `${dept.avgPerformance}%` }}
                       />
                     </div>
@@ -191,8 +191,8 @@ export const DepartmentOverview = ({ onDepartmentClick }: DepartmentOverviewProp
                 </div>
 
                 {/* Click indicator */}
-                <div className="mt-4 text-center">
-                  <p className="text-xs text-muted-foreground font-medium">
+                <div className="mt-5 pt-4 border-t border-border/30">
+                  <p className="text-[10px] text-muted-foreground/70 font-semibold uppercase tracking-wider text-center">
                     Click to view employees →
                   </p>
                 </div>
