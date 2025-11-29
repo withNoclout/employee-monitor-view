@@ -1,0 +1,14 @@
+path: /Users/sassada/Documents/Hackathon/employee-monitor-view/yolo_workflow/processed_data
+train: train/images
+val: val/images
+nc: 9
+names:
+- Motherboard
+- CPU
+- RAM
+- GPU
+- Power Supply
+- phone
+- pen
+- snack
+- ear

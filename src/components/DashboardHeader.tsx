@@ -1,10 +1,11 @@
 import { Activity, Users, TrendingUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 
 interface StatCardProps {
   icon: React.ReactNode;
   label: string;
-  value: string;
+  value: React.ReactNode;
   trend?: string;
 }
 
@@ -15,7 +16,7 @@ const StatCard = ({ icon, label, value, trend }: StatCardProps) => (
       <div className="flex items-center justify-between">
         <div className="flex-1">
           <p className="text-sm font-medium text-muted-foreground mb-2">{label}</p>
-          <p className="text-3xl font-bold text-foreground mb-1">{value}</p>
+          <div className="text-3xl font-bold text-foreground mb-1">{value}</div>
           {trend && (
             <p className="text-sm text-success font-medium flex items-center gap-1.5">
               <TrendingUp className="w-4 h-4" />
@@ -33,7 +34,36 @@ const StatCard = ({ icon, label, value, trend }: StatCardProps) => (
   </Card>
 );
 
-export const DashboardHeader = () => {
+export interface DashboardStats {
+  activeEmployees: {
+    value: number;
+    trend: string;
+    trendDirection: 'up' | 'down';
+  };
+  avgPerformance: {
+    value: number;
+    trend: string;
+  };
+  complianceRate: {
+    value: number;
+    trend: string;
+  };
+}
+
+interface DashboardHeaderProps {
+  stats?: DashboardStats;
+}
+
+export const DashboardHeader = ({ stats }: DashboardHeaderProps) => {
+  // Default fallback values if no stats provided
+  const defaultStats = {
+    activeEmployees: { value: 12, trend: "+2 this week", trendDirection: 'up' as const },
+    avgPerformance: { value: 87, trend: "+5% from last week" },
+    complianceRate: { value: 94, trend: "+3% improvement" }
+  };
+
+  const currentStats = stats || defaultStats;
+
   return (
     <div className="mb-10">
       <div className="mb-8 relative">
@@ -51,20 +81,35 @@ export const DashboardHeader = () => {
         <StatCard
           icon={<Users className="w-8 h-8" />}
           label="Active Employees"
-          value="12"
-          trend="+2 this week"
+          value={
+            <AnimatedNumber
+              value={currentStats.activeEmployees.value}
+              format={(v) => Math.round(v).toString()}
+            />
+          }
+          trend={currentStats.activeEmployees.trend}
         />
         <StatCard
           icon={<Activity className="w-8 h-8" />}
           label="Average Performance"
-          value="87%"
-          trend="+5% from last week"
+          value={
+            <AnimatedNumber
+              value={currentStats.avgPerformance.value}
+              format={(v) => `${v.toFixed(1)}%`}
+            />
+          }
+          trend={currentStats.avgPerformance.trend}
         />
         <StatCard
           icon={<TrendingUp className="w-8 h-8" />}
           label="Compliance Rate"
-          value="94%"
-          trend="+3% improvement"
+          value={
+            <AnimatedNumber
+              value={currentStats.complianceRate.value}
+              format={(v) => `${v.toFixed(2)}%`}
+            />
+          }
+          trend={currentStats.complianceRate.trend}
         />
       </div>
     </div>
