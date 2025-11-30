@@ -67,5 +67,17 @@ When extending the system, follow these steps:
 - [ ] Update **WORK_INSTRUCTION.md** with module overview.
 - [ ] Commit & push to `dev`.
 
+## 7. Recent Updates & UI Improvements (v2.1)
+### Training UI Refactor
+- **Model Configuration Panel**: Consolidated CNN (Object Detection) and KNN (Gesture) model configurations into a single, tabbed panel with smooth `framer-motion` transitions.
+- **Gesture Management**:
+  - Added "Manage Sequences" (Undo/Redo) functionality to view and delete individual gesture samples.
+  - Implemented permanent deletion for gesture classes.
+- **Training Results**: Separated training completion dialogs for CNN and KNN models to show relevant metrics (mAP for CNN, Accuracy/Samples for KNN).
+
+### Visualization & UX
+- **Landmark Visualization**: Reduced the size of hand landmark dots (green dots) by 50% in `Training.tsx` and `Monitor.tsx` for a cleaner view.
+- **Notifications**: Relocated all system notifications (Sonner and Toaster) to the **bottom-left** to prevent blocking quick-action buttons on the right.
+
 ---
 *Keep this file up‑to‑date as the project evolves. It serves as the single source of truth for developers onboarding or extending the Component Assembly Log site.*

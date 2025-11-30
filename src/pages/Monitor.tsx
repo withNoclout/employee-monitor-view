@@ -1232,7 +1232,7 @@ const Monitor = () => {
           // Draw ALL 21 keypoints (same as Training.tsx)
           hand.keypoints.forEach(kp => {
             ctx.beginPath();
-            ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
+            ctx.arc(kp.x, kp.y, 2.5, 0, 2 * Math.PI);
             ctx.fillStyle = isTestingGesture ? '#ff0000' : (lockedGesture ? '#00ff00' : '#00FF00');
             ctx.fill();
           });

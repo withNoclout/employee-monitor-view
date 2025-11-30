@@ -24,82 +24,82 @@ const App = () => (
     <ThemeProvider>
       <TooltipProvider>
         <Toaster />
-        <Sonner />
+        <Sonner position="bottom-left" />
         <BrowserRouter>
           <AuthProvider>
             <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Index />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/monitor/:id"
-              element={
-                <ProtectedRoute>
-                  <Monitor />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/training"
-              element={
-                <ProtectedRoute>
-                  <Training />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/build-wi"
-              element={
-                <ProtectedRoute>
-                  <BuildWI />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/manage-team"
-              element={
-                <ProtectedRoute>
-                  <ManageTeam />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/train-model"
-              element={
-                <ProtectedRoute>
-                  <TrainModel />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/annotate"
-              element={
-                <ProtectedRoute>
-                  <Annotate />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/view-log"
-              element={
-                <ProtectedRoute>
-                  <ViewLog />
-                </ProtectedRoute>
-              }
-            />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </ThemeProvider>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Index />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/monitor/:id"
+                element={
+                  <ProtectedRoute>
+                    <Monitor />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/training"
+                element={
+                  <ProtectedRoute>
+                    <Training />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/build-wi"
+                element={
+                  <ProtectedRoute>
+                    <BuildWI />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/manage-team"
+                element={
+                  <ProtectedRoute>
+                    <ManageTeam />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/train-model"
+                element={
+                  <ProtectedRoute>
+                    <TrainModel />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/annotate"
+                element={
+                  <ProtectedRoute>
+                    <Annotate />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/view-log"
+                element={
+                  <ProtectedRoute>
+                    <ViewLog />
+                  </ProtectedRoute>
+                }
+              />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

@@ -1,13 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer, AlertTriangle, FileText } from "lucide-react";
+import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer, AlertTriangle, FileText, RotateCcw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ImageAnnotator } from "@/components/ImageAnnotator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import * as tf from '@tensorflow/tfjs';
+import { motion, AnimatePresence } from "framer-motion";
+
 import * as handPoseDetection from '@tensorflow-models/hand-pose-detection';
 import * as mobilenet from '@tensorflow-models/mobilenet';
 import { Switch } from "@/components/ui/switch";
@@ -15,6 +17,7 @@ import { Progress } from "@/components/ui/progress";
 import { LossGraphCard } from "@/components/LossGraphCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { GestureTrainingSummaryDialog } from "@/components/GestureTrainingSummaryDialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TrainingSummaryDialog } from "@/components/TrainingSummaryDialog";
@@ -76,6 +79,7 @@ const Training = () => {
   const [multiCamProgress, setMultiCamProgress] = useState(0);
   const [multiCamCountdown, setMultiCamCountdown] = useState<number | null>(null);
   const [showSummaryDialog, setShowSummaryDialog] = useState(false);
+  const [showGestureSummaryDialog, setShowGestureSummaryDialog] = useState(false);
   const [summaryMetrics, setSummaryMetrics] = useState<any>(null);
   const [isFlashing, setIsFlashing] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -91,6 +95,52 @@ const Training = () => {
   // Refs for video and canvase, setCurrentPhase] = useState(1);
   const [currentPhase, setCurrentPhase] = useState(1);
   const [phaseDescription, setPhaseDescription] = useState("Frozen backbone - training detection head only");
+  // Sequence management state
+  const [managingClass, setManagingClass] = useState<string | null>(null);
+  const [classSequences, setClassSequences] = useState<any[]>([]);
+  const [isLoadingSequences, setIsLoadingSequences] = useState(false);
+
+  const fetchSequences = async (className: string) => {
+    setIsLoadingSequences(true);
+    try {
+      const response = await fetch(`http://localhost:3000/api/gestures/sequences/${className}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Sort by recorded_at descending (newest first)
+        data.sort((a: any, b: any) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime());
+        setClassSequences(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch sequences:", error);
+      toast.error("Failed to load sequences");
+    } finally {
+      setIsLoadingSequences(false);
+    }
+  };
+
+  const handleDeleteSequence = async (className: string, sequenceId: string) => {
+    try {
+      if (!confirm("Delete this sequence?")) return;
+
+      const response = await fetch(`http://localhost:3000/api/gestures/sequences/${className}/${sequenceId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        toast.success("Sequence deleted");
+        // Refresh sequences
+        fetchSequences(className);
+        // Refresh class list to update counts (silent)
+        fetchGestureClasses(true);
+      } else {
+        throw new Error("Failed to delete");
+      }
+    } catch (error) {
+      console.error("Error deleting sequence:", error);
+      toast.error("Failed to delete sequence");
+    }
+  };
+
   const [metrics, setMetrics] = useState<Metric[]>([]);
   useEffect(() => {
     if (!isTraining) return;
@@ -233,8 +283,8 @@ const Training = () => {
   }, [fetchClasses]);
 
   // Fetch gesture classes from server
-  const fetchGestureClasses = async () => {
-    setIsLoadingGestures(true);
+  const fetchGestureClasses = async (silent = false) => {
+    if (!silent) setIsLoadingGestures(true);
     try {
       const [classesRes, modelRes] = await Promise.all([
         fetch('http://localhost:3000/api/gestures/classes'),
@@ -270,7 +320,7 @@ const Training = () => {
     } catch (error) {
       console.error("Failed to fetch gesture classes:", error);
     } finally {
-      setIsLoadingGestures(false);
+      if (!silent) setIsLoadingGestures(false);
     }
   };
 
@@ -284,6 +334,43 @@ const Training = () => {
       }
     } catch (error) {
       console.error("Failed to fetch gesture model info:", error);
+    }
+  };
+
+  // Handler to delete gesture class
+  const handleDeleteGestureClass = async (className: string) => {
+    try {
+      // Find the class to get sequence count
+      const gestureClass = gestureClasses.find(c => c.name === className);
+
+      if (!gestureClass) {
+        toast.error(`Gesture class "${className}" not found`);
+        return;
+      }
+
+      // Confirm deletion
+      if (!confirm(`Delete gesture class "${gestureClass.displayName || className}"?\n\nThis will permanently delete:\n• ${gestureClass.sequenceCount} sequences\n• ${gestureClass.totalFrames} frames`)) {
+        return;
+      }
+
+      // Call server API to delete
+      const response = await fetch(`http://localhost:3000/api/gestures/classes/${className}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete gesture class');
+      }
+
+      const result = await response.json();
+
+      // Refresh the gesture classes list
+      await fetchGestureClasses();
+
+      toast.success(result.message || `Deleted gesture class "${className}"`);
+    } catch (error) {
+      console.error('Error deleting gesture class:', error);
+      toast.error("Failed to delete gesture class");
     }
   };
 
@@ -1030,8 +1117,9 @@ const Training = () => {
               if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
               toast.success("Training completed successfully!");
               if (isGesture) {
-                fetchGestureModelInfo();
+                await fetchGestureModelInfo();
                 fetchGestureClasses();
+                setShowGestureSummaryDialog(true);
               } else {
                 // Fetch summary for CNN training
                 try {
@@ -1204,7 +1292,7 @@ const Training = () => {
               // Draw keypoints
               hand.keypoints.forEach(keypoint => {
                 ctx.beginPath();
-                ctx.arc(keypoint.x, keypoint.y, 5, 0, 2 * Math.PI);
+                ctx.arc(keypoint.x, keypoint.y, 2.5, 0, 2 * Math.PI);
                 ctx.fillStyle = '#00FF00';
                 ctx.fill();
               });
@@ -1451,6 +1539,12 @@ const Training = () => {
         isOpen={showSummaryDialog}
         onClose={() => setShowSummaryDialog(false)}
         metrics={summaryMetrics}
+      />
+
+      <GestureTrainingSummaryDialog
+        open={showGestureSummaryDialog}
+        onOpenChange={setShowGestureSummaryDialog}
+        modelInfo={gestureModelInfo}
       />
 
       {isAnnotating ? (
@@ -1856,201 +1950,244 @@ const Training = () => {
                 <CardDescription className="text-[11px] uppercase tracking-widest font-medium">Select model type to train</CardDescription>
               </CardHeader>
               <CardContent className="flex-1 flex flex-col gap-4 pt-4">
-                <Tabs defaultValue="cnn" className="w-full flex-1 flex flex-col" onValueChange={(val) => setActiveTab(val as 'cnn' | 'knn')}>
+                <Tabs value={activeTab} className="w-full flex-1 flex flex-col" onValueChange={(val) => setActiveTab(val as 'cnn' | 'knn')}>
                   <TabsList className="grid w-full grid-cols-2 mb-4 bg-muted/30 p-1">
                     <TabsTrigger value="cnn" className="text-xs font-bold uppercase tracking-wider data-[state=active]:bg-background data-[state=active]:shadow-sm">CNN</TabsTrigger>
                     <TabsTrigger value="knn" className="text-xs font-bold uppercase tracking-wider data-[state=active]:bg-background data-[state=active]:shadow-sm">KNN</TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="cnn" className="flex-1 flex flex-col data-[state=active]:flex">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Object Classes</h3>
-                      <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)} className="h-7 text-xs">
-                        <Plus className="w-3 h-3 mr-1.5" />
-                        Add
-                      </Button>
-                    </div>
-
-                    <ScrollArea className="h-[300px] pr-2">
-                      {classes.map((cls) => (
-                        <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors group shadow-sm">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-2 h-2 rounded-full shadow-sm ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
-                            <div>
-                              <p className="font-bold text-sm tracking-tight">{cls.name}</p>
-                              <span className="text-xs text-muted-foreground font-mono">
-                                {cls.count} samples
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {cls.isTrained && (
-                              <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px] uppercase">
-                                Trained
-                              </Badge>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (confirm(`Are you sure you want to delete class "${cls.name}"? This may invalidate existing annotations.`)) {
-                                  try {
-                                    const res = await fetch(`http://localhost:3000/api/classes/${cls.name}`, {
-                                      method: 'DELETE'
-                                    });
-                                    if (res.ok) {
-                                      toast.success(`Class "${cls.name}" deleted`);
-                                      fetchClasses();
-                                    } else {
-                                      toast.error("Failed to delete class");
-                                    }
-                                  } catch (err) {
-                                    console.error(err);
-                                    toast.error("Error deleting class");
-                                  }
-                                }
-                              }}
-                            >
-                              <Trash2 className="w-3 h-3" />
+                  <div className="relative flex-1 overflow-hidden flex flex-col">
+                    <AnimatePresence mode="wait">
+                      {activeTab === 'cnn' ? (
+                        <motion.div
+                          key="cnn"
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 10 }}
+                          transition={{ duration: 0.2 }}
+                          className="flex-1 flex flex-col"
+                        >
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Object Classes</h3>
+                            <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)} className="h-7 text-xs">
+                              <Plus className="w-3 h-3 mr-1.5" />
+                              Add
                             </Button>
                           </div>
-                        </div>
-                      ))}
-                    </ScrollArea>
-                    <div className="pt-4 border-t border-border/30 mt-auto">
-                      <Button
-                        className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm"
-                        onClick={() => startTraining(false)}
-                        disabled={isTraining || classes.filter(c => c.includeInTraining).length === 0}
-                      >
-                        {isTraining && activeTab === 'cnn' ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Training...
-                          </>
-                        ) : (
-                          <>
-                            <Brain className="w-4 h-4 mr-2" />
-                            Train Model
-                          </>
-                        )}
-                      </Button>
-                      {isTraining && activeTab === 'cnn' && (
-                        <Button
-                          className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm mt-2 bg-destructive hover:bg-destructive/90 animate-pulse"
-                          onClick={handleEmergencyStop}
-                        >
-                          <AlertTriangle className="w-4 h-4 mr-2" />
-                          Emergency Stop
-                        </Button>
-                      )}
-                      <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-wider tabular-nums">
-                        {classes.filter(c => c.includeInTraining).length} classes selected
-                      </p>
-                    </div>
-                  </TabsContent>
 
-                  <TabsContent value="knn" className="flex-1 flex flex-col data-[state=active]:flex">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Gesture Classes (GRU)</h3>
-                      <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)} className="h-7 text-xs">
-                        <Plus className="w-3 h-3 mr-1.5" />
-                        Add
-                      </Button>
-                    </div>
-
-                    {isLoadingGestures ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                      </div>
-                    ) : gestureClasses.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 flex items-center justify-center mb-3">
-                          <Hand className="w-6 h-6 text-muted-foreground" />
-                        </div>
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">No gesture classes yet</p>
-                        <p className="text-[10px] text-muted-foreground mt-1">Click "Add" to create one</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2 flex-1 overflow-auto max-h-[300px] pr-2">
-                        {gestureClasses.map((cls) => (
-                          <div
-                            key={cls.id}
-                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer shadow-sm ${selectedGestureClass === cls.name
-                              ? 'border-primary/50 bg-primary/10'
-                              : 'border-border/40 bg-muted/20 hover:bg-muted/40'
-                              }`}
-                            onClick={() => setSelectedGestureClass(cls.name)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-2 h-2 rounded-full shadow-sm ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
-                              <div>
-                                <p className="font-bold text-sm tracking-tight">{cls.displayName || cls.name}</p>
-                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider tabular-nums">
-                                  {cls.sequenceCount} seq • {cls.totalFrames} frames
-                                </p>
+                          <ScrollArea className="flex-1 pr-2">
+                            {classes.map((cls) => (
+                              <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors group shadow-sm">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-2 h-2 rounded-full shadow-sm ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
+                                  <div>
+                                    <p className="font-bold text-sm tracking-tight">{cls.name}</p>
+                                    <span className="text-xs text-muted-foreground font-mono">
+                                      {cls.count} samples
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {cls.isTrained && (
+                                    <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px] uppercase">
+                                      Trained
+                                    </Badge>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (confirm(`Are you sure you want to delete class "${cls.name}"? This may invalidate existing annotations.`)) {
+                                        try {
+                                          const res = await fetch(`http://localhost:3000/api/classes/${cls.name}`, {
+                                            method: 'DELETE'
+                                          });
+                                          if (res.ok) {
+                                            toast.success(`Class "${cls.name}" deleted`);
+                                            fetchClasses();
+                                          } else {
+                                            toast.error("Failed to delete class");
+                                          }
+                                        } catch (err) {
+                                          console.error(err);
+                                          toast.error("Error deleting class");
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[9px] uppercase tracking-wider font-bold">
-                                {cls.isTrained ? "Trained" : "New"}
-                              </Badge>
-                              {cls.sequenceCount < 5 && (
-                                <Badge variant="outline" className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">
-                                  +{5 - cls.sequenceCount}
-                                </Badge>
+                            ))}
+                          </ScrollArea>
+                          <div className="pt-4 border-t border-border/30 mt-auto">
+                            <Button
+                              className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm"
+                              onClick={() => startTraining(false)}
+                              disabled={isTraining || classes.filter(c => c.includeInTraining).length === 0}
+                            >
+                              {isTraining && activeTab === 'cnn' ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Training...
+                                </>
+                              ) : (
+                                <>
+                                  <Brain className="w-4 h-4 mr-2" />
+                                  Train Model
+                                </>
                               )}
-                            </div>
+                            </Button>
+                            {isTraining && activeTab === 'cnn' && (
+                              <Button
+                                className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm mt-2 bg-destructive hover:bg-destructive/90 animate-pulse"
+                                onClick={handleEmergencyStop}
+                              >
+                                <AlertTriangle className="w-4 h-4 mr-2" />
+                                Emergency Stop
+                              </Button>
+                            )}
+                            <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-wider tabular-nums">
+                              {classes.filter(c => c.includeInTraining).length} classes selected
+                            </p>
                           </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Model Info */}
-                    {gestureModelInfo?.exists && (
-                      <div className="bg-muted/30 border border-border/30 rounded-lg p-3 mb-3 shadow-sm">
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Trained Model</p>
-                        <p className="text-sm font-bold tabular-nums">Accuracy: {((gestureModelInfo.final_accuracy || 0) * 100).toFixed(1)}%</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider tabular-nums">{gestureModelInfo.num_classes} classes • {gestureModelInfo.total_samples} samples</p>
-                      </div>
-                    )}
-
-                    <div className="pt-4 border-t border-border/30 mt-auto">
-                      <Button
-                        className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm"
-                        variant="secondary"
-                        onClick={() => startTraining(true)}
-                        disabled={isTraining || gestureClasses.length < 2}
-                      >
-                        {isTraining && activeTab === 'knn' ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Training...
-                          </>
-                        ) : (
-                          <>
-                            <Brain className="w-4 h-4 mr-2" />
-                            Train Model
-                          </>
-                        )}
-                      </Button>
-                      {isTraining && activeTab === 'knn' && (
-                        <Button
-                          className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm mt-2 bg-destructive hover:bg-destructive/90 animate-pulse"
-                          variant="destructive"
-                          onClick={handleEmergencyStop}
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="knn"
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -10 }}
+                          transition={{ duration: 0.2 }}
+                          className="flex-1 flex flex-col"
                         >
-                          <AlertTriangle className="w-4 h-4 mr-2" />
-                          Emergency Stop
-                        </Button>
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Gesture Classes (GRU)</h3>
+                            <Button size="sm" variant="outline" onClick={() => setIsAddClassOpen(true)} className="h-7 text-xs">
+                              <Plus className="w-3 h-3 mr-1.5" />
+                              Add
+                            </Button>
+                          </div>
+
+                          {isLoadingGestures ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : gestureClasses.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-8 text-center">
+                              <div className="w-12 h-12 rounded-lg border-2 border-border/50 bg-muted/30 flex items-center justify-center mb-3">
+                                <Hand className="w-6 h-6 text-muted-foreground" />
+                              </div>
+                              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">No gesture classes yet</p>
+                              <p className="text-[10px] text-muted-foreground mt-1">Click "Add" to create one</p>
+                            </div>
+                          ) : (
+                            <ScrollArea className="flex-1 pr-2">
+                              {gestureClasses.map((cls) => (
+                                <div
+                                  key={cls.id}
+                                  className={`flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer shadow-sm group ${selectedGestureClass === cls.name
+                                    ? 'border-primary/50 bg-primary/10'
+                                    : 'border-border/40 bg-muted/20 hover:bg-muted/40'
+                                    }`}
+                                  onClick={() => setSelectedGestureClass(cls.name)}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-2 h-2 rounded-full shadow-sm ${cls.isTrained ? 'bg-success' : 'bg-warning'}`} />
+                                    <div>
+                                      <p className="font-bold text-sm tracking-tight">{cls.displayName || cls.name}</p>
+                                      <span className="text-xs text-muted-foreground font-mono">
+                                        {cls.sequenceCount} seq • {cls.totalFrames} frames
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant={cls.isTrained ? "default" : "secondary"} className="text-[9px] uppercase tracking-wider font-bold">
+                                      {cls.isTrained ? "Trained" : "New"}
+                                    </Badge>
+                                    {cls.sequenceCount < 5 && (
+                                      <Badge variant="outline" className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">
+                                        +{5 - cls.sequenceCount}
+                                      </Badge>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 w-6 p-0 hover:bg-primary/10 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setManagingClass(cls.name);
+                                        fetchSequences(cls.name);
+                                      }}
+                                      title="Manage Sequences (Undo)"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5" />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteGestureClass(cls.name);
+                                      }}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </ScrollArea>
+                          )}
+
+                          {/* Model Info */}
+                          {gestureModelInfo?.exists && (
+                            <div className="bg-muted/30 border border-border/30 rounded-lg p-3 mb-3 shadow-sm">
+                              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Trained Model</p>
+                              <p className="text-sm font-bold tabular-nums">Accuracy: {((gestureModelInfo.final_accuracy || 0) * 100).toFixed(1)}%</p>
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-wider tabular-nums">{gestureModelInfo.num_classes} classes • {gestureModelInfo.total_samples} samples</p>
+                            </div>
+                          )}
+
+                          <div className="pt-4 border-t border-border/30 mt-auto">
+                            <Button
+                              className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm"
+                              onClick={() => startTraining(true)}
+                              disabled={isTraining || gestureClasses.length < 2}
+                            >
+                              {isTraining && activeTab === 'knn' ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Training...
+                                </>
+                              ) : (
+                                <>
+                                  <Brain className="w-4 h-4 mr-2" />
+                                  Train Model
+                                </>
+                              )}
+                            </Button>
+                            {isTraining && activeTab === 'knn' && (
+                              <Button
+                                className="w-full h-11 font-bold uppercase tracking-wider text-xs shadow-sm mt-2 bg-destructive hover:bg-destructive/90 animate-pulse"
+                                variant="destructive"
+                                onClick={handleEmergencyStop}
+                              >
+                                <AlertTriangle className="w-4 h-4 mr-2" />
+                                Emergency Stop
+                              </Button>
+                            )}
+                            <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-wider tabular-nums">
+                              {gestureClasses.length} classes • {gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0)} sequences
+                            </p>
+                          </div>
+                        </motion.div>
                       )}
-                      <p className="text-[10px] text-muted-foreground text-center mt-2 uppercase tracking-wider tabular-nums">
-                        {gestureClasses.length} classes • {gestureClasses.reduce((sum, c) => sum + c.sequenceCount, 0)} sequences
-                      </p>
-                    </div>
-                  </TabsContent>
+                    </AnimatePresence>
+                  </div>
                 </Tabs>
               </CardContent>
             </Card>
@@ -2202,6 +2339,68 @@ const Training = () => {
               disabled={!newClassName.trim()}
             >
               Add {activeTab === 'cnn' ? "Class" : "Gesture"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Sequences Dialog */}
+      <Dialog open={!!managingClass} onOpenChange={(open) => !open && setManagingClass(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Manage Sequences: {managingClass}</DialogTitle>
+            <DialogDescription>
+              View and manage recorded sequences for this gesture class.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="min-h-[300px] max-h-[500px] overflow-hidden flex flex-col">
+            {isLoadingSequences ? (
+              <div className="flex-1 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : classSequences.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+                <Database className="w-10 h-10 mb-2 opacity-20" />
+                <p>No sequences recorded yet</p>
+              </div>
+            ) : (
+              <ScrollArea className="flex-1 pr-4">
+                <div className="space-y-2">
+                  {classSequences.map((seq, idx) => (
+                    <div key={seq.sequence_id} className="flex items-center justify-between p-3 rounded-lg border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
+                          {classSequences.length - idx}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium font-mono">{seq.sequence_id}</p>
+                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground uppercase tracking-wider">
+                            <span>{seq.frame_count} frames</span>
+                            <span>•</span>
+                            <span>{new Date(seq.recorded_at).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => handleDeleteSequence(managingClass!, seq.sequence_id)}
+                        title="Delete Sequence"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setManagingClass(null)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

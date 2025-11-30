@@ -735,7 +735,10 @@ app.post('/api/gestures/sequences', (req, res) => {
 
         // Save sequence
         const filePath = path.join(classDir, `${sequenceId}.json`);
+        console.log(`[API] Saving gesture sequence for class '${safeName}'...`);
         fs.writeFileSync(filePath, JSON.stringify(sequenceData, null, 2));
+        console.log(`[API] Sequence saved to: ${filePath}`);
+        console.log(`[API] Sequence ID: ${sequenceId}, Frames: ${frames.length}`);
 
         console.log(`Saved gesture sequence: ${safeName}/${sequenceId} (${frames.length} frames)`);
 
@@ -786,12 +789,99 @@ app.delete('/api/gestures/sequences/:className/:sequenceId', (req, res) => {
         const filePath = path.join(GESTURES_DIR, className, `${sequenceId}.json`);
 
         if (fs.existsSync(filePath)) {
+            console.log(`[API] Deleting sequence file: ${filePath}`);
             fs.unlinkSync(filePath);
+            console.log(`[API] Sequence ${sequenceId} deleted successfully`);
+
+            // Update model_info.json to mark class as untrained
+            const modelInfoPath = path.join(__dirname, 'gesture_workflow', 'models', 'model_info.json');
+            if (fs.existsSync(modelInfoPath)) {
+                try {
+                    const modelInfo = JSON.parse(fs.readFileSync(modelInfoPath, 'utf-8'));
+                    if (modelInfo.trained_classes && modelInfo.trained_classes.includes(className)) {
+                        console.log(`[API] Marking class '${className}' as untrained due to data change`);
+                        modelInfo.trained_classes = modelInfo.trained_classes.filter(c => c !== className);
+                        fs.writeFileSync(modelInfoPath, JSON.stringify(modelInfo, null, 2));
+                    }
+                } catch (e) {
+                    console.error("Error updating model_info.json:", e);
+                }
+            }
+        } else {
+            console.log(`[API] Sequence file not found: ${filePath}`);
         }
 
         res.json({ success: true });
     } catch (error) {
         console.error('Error deleting sequence:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete entire gesture class
+app.delete('/api/gestures/classes/:className', (req, res) => {
+    try {
+        const { className } = req.params;
+        const classDir = path.join(GESTURES_DIR, className);
+
+        console.log(`[API] Request to delete gesture class: ${className}`);
+        console.log(`[API] Target directory: ${classDir}`);
+
+        // 1. Kill inference process first to release any potential locks
+        if (gestureInferenceProcess) {
+            console.log('[API] Killing inference process before deletion...');
+            gestureInferenceProcess.kill();
+            gestureInferenceProcess = null;
+        }
+
+        // 2. Delete all sequence files and directory recursively
+        if (fs.existsSync(classDir)) {
+            // Use rmSync with recursive: true for robust deletion
+            fs.rmSync(classDir, { recursive: true, force: true });
+            console.log(`[API] Deleted directory: ${classDir}`);
+        } else {
+            console.log(`[API] Directory not found (already deleted?): ${classDir}`);
+        }
+
+        // 3. Verify deletion
+        if (fs.existsSync(classDir)) {
+            throw new Error(`Failed to delete directory: ${classDir}`);
+        }
+
+        // 4. Remove from classes.json
+        const classData = loadGestureClasses();
+        const initialLength = classData.classes.length;
+        classData.classes = classData.classes.filter(c => c.name !== className);
+
+        if (classData.classes.length === initialLength) {
+            console.log(`[API] Warning: Class ${className} was not found in classes.json`);
+        }
+
+        saveGestureClasses(classData);
+
+        // 5. Delete the trained model file to force a rebuild
+        const gestureModelPath = path.join(__dirname, 'gesture_workflow', 'models', 'gesture_model.pkl');
+        const modelInfoPath = path.join(__dirname, 'gesture_workflow', 'models', 'model_info.json');
+
+        if (fs.existsSync(gestureModelPath)) {
+            fs.unlinkSync(gestureModelPath);
+            console.log(`[API] Deleted model file to force rebuild: ${gestureModelPath}`);
+        }
+
+        if (fs.existsSync(modelInfoPath)) {
+            fs.unlinkSync(modelInfoPath);
+            console.log(`[API] Deleted model info file: ${modelInfoPath}`);
+        }
+
+        // 6. Restart inference process
+        console.log(`[API] Reloading inference process...`);
+        startGestureProcess();
+
+        res.json({ success: true, message: `Deleted gesture class "${className}" and reset model.` });
+    } catch (error) {
+        console.error('Error deleting gesture class:', error);
+        // Try to restart process even if delete failed, to ensure system isn't broken
+        startGestureProcess();
         res.status(500).json({ error: error.message });
     }
 });
