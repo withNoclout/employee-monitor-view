@@ -159,18 +159,19 @@ const Index = () => {
         </div>
 
         {/* Conditional rendering based on view */}
-        {currentView === "overview" ? (
-          <DepartmentOverview
-            onDepartmentClick={handleDepartmentClick}
-            employees={employees}
-            highlightedDeptId={highlightedDeptId}
-          />
+        {currentView === "overview" ? (<DepartmentOverview
+          onDepartmentClick={handleDepartmentClick}
+          employees={employees}
+          highlightedDeptId={highlightedDeptId}
+          onSelectEmployee={handleSearchSelect}
+        />
         ) : (
           <EmployeeDetailView
             departmentId={currentView}
             onBack={handleBackToOverview}
             employees={employees}
             selectedEmployeeId={selectedEmployeeId}
+            onSelectEmployee={handleSearchSelect}
           />
         )}
 

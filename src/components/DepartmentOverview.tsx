@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Users, Factory, Package, Wrench, ShieldCheck, Truck, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
@@ -20,6 +19,7 @@ interface DepartmentOverviewProps {
   onDepartmentClick: (departmentId: string) => void;
   employees: any[];
   highlightedDeptId?: string | null;
+  onSelectEmployee?: (employeeId: string) => void; // Optional now
 }
 
 export const DepartmentOverview = ({ onDepartmentClick, employees, highlightedDeptId }: DepartmentOverviewProps) => {
@@ -144,13 +144,14 @@ export const DepartmentOverview = ({ onDepartmentClick, employees, highlightedDe
                   {/* Header */}
                   <div className="flex items-start justify-between mb-6">
                     <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-industrial group-hover:border-primary/50 group-hover:bg-primary/5 transition-all duration-300">
+                      <div className="w-14 h-14 rounded-lg border-2 border-border/50 bg-muted/30 backdrop-blur-sm flex items-center justify-center shadow-industrial group-hover:border-primary/50 group-hover:bg-primary/5 transition-all duration-300 shrink-0">
                         <div className="text-primary group-hover:scale-110 transition-transform duration-300">
                           {dept.icon}
                         </div>
                       </div>
+
                       <div>
-                        <h3 className="font-bold text-foreground text-lg mb-1.5 tracking-tight">
+                        <h3 className="font-bold text-foreground text-lg mb-1.5 tracking-tight truncate">
                           {dept.name}
                         </h3>
                         <Badge className={`${getStatusColor(dept.status)} shadow-sm font-semibold text-[10px] uppercase tracking-wider px-2`}>
@@ -158,6 +159,7 @@ export const DepartmentOverview = ({ onDepartmentClick, employees, highlightedDe
                         </Badge>
                       </div>
                     </div>
+
                     <ChevronRight className="w-5 h-5 text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-1 transition-all" />
                   </div>
 

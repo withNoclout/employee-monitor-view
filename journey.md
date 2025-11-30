@@ -43,10 +43,18 @@
     *   Identified a case-sensitivity mismatch: Server expected `'COMPLETED'`, Frontend sent `'completed'`.
     *   Updated `server.js` to accept both uppercase and lowercase status strings for accurate counting.
 
+#### 7. Department Search Integration
+*   **Issue**: Users needed a way to search for employees within a specific department view.
+*   **Fix**:
+    *   Added `SearchBar` to the header of `EmployeeDetailView.tsx`.
+    *   Connected it to the main search logic in `Index.tsx` via `onSelectEmployee` prop.
+    *   This allows users to filter and select employees specifically within the department they are viewing.
+
 ### Summary of Key Changes
 - **`server.js`**: Added persistence for `realUser`, new update endpoint, and robust hours/task counting logic.
 - **`Monitor.tsx`**: Connected to real data, added precise timing (`started_at`), and real-time server syncing.
 - **`ManageTeam.tsx`**: Connected to real data, added multi-team support, and implemented bulk task assignment via API.
+- **`EmployeeDetailView.tsx`**: Added department-scoped search functionality.
 
 ---
-*Last Updated: 2025-12-01*
+*Last Updated: 2025-12-01 (Search Feature Added)*

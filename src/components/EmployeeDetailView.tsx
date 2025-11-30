@@ -2,15 +2,17 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { EmployeeCard } from "@/components/EmployeeCard";
 import { motion } from "framer-motion";
+import { SearchBar } from "@/components/SearchBar";
 
 interface EmployeeDetailViewProps {
   departmentId: string;
   onBack: () => void;
   employees: any[];
   selectedEmployeeId?: string | null;
+  onSelectEmployee?: (employeeId: string) => void;
 }
 
-export const EmployeeDetailView = ({ departmentId, onBack, employees, selectedEmployeeId }: EmployeeDetailViewProps) => {
+export const EmployeeDetailView = ({ departmentId, onBack, employees, selectedEmployeeId, onSelectEmployee }: EmployeeDetailViewProps) => {
   const getDepartmentName = (id: string) => {
     const names: Record<string, string> = {
       production: "Production Floor",
@@ -45,26 +47,36 @@ export const EmployeeDetailView = ({ departmentId, onBack, employees, selectedEm
       className="space-y-6"
     >
       {/* Header with back button */}
-      <div className="flex items-center gap-4">
-        <Button
-          onClick={onBack}
-          variant="outline"
-          size="sm"
-          className="flex items-center gap-2 hover:bg-muted transition-all shadow-sm"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Overview
-        </Button>
-        <div className="flex items-center gap-3">
-          <div className="w-1.5 h-8 gradient-primary rounded-full shadow-glow" />
-          <div>
-            <h2 className="text-2xl font-bold text-foreground tracking-tight">
-              {getDepartmentName(departmentId)}
-            </h2>
-            <p className="text-sm text-muted-foreground font-medium">
-              Showing {displayEmployees.length} active employees
-            </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={onBack}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 hover:bg-muted transition-all shadow-sm"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Overview
+          </Button>
+          <div className="flex items-center gap-3">
+            <div className="w-1.5 h-8 gradient-primary rounded-full shadow-glow" />
+            <div>
+              <h2 className="text-2xl font-bold text-foreground tracking-tight">
+                {getDepartmentName(departmentId)}
+              </h2>
+              <p className="text-sm text-muted-foreground font-medium">
+                Showing {displayEmployees.length} active employees
+              </p>
+            </div>
           </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="w-64">
+          <SearchBar
+            employees={displayEmployees}
+            onSelectEmployee={(id) => onSelectEmployee && onSelectEmployee(id)}
+          />
         </div>
       </div>
 
