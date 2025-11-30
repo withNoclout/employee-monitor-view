@@ -6,6 +6,7 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,10 +14,86 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = 3000;
 
-// Python interpreter path (project venv)
-const PYTHON_PATH = '/home/noclout/employee-monitor-view/venv/bin/python3';
+// Python interpreter path - detect automatically
+function getPythonPath() {
+    const platform = process.platform;
+    try {
+        if (platform === 'win32') {
+            // Try to find Python in venv first (Windows paths)
+            const venvPaths = [
+                path.join(__dirname, 'venv', 'Scripts', 'python.exe'),
+                path.join(__dirname, 'venv', 'bin', 'python.exe'),
+                'py',  // Windows launcher
+            ];
+            for (const p of venvPaths) {
+                try {
+                    execSync(`"${p}" --version`, { stdio: 'ignore' });
+                    console.log(`[Init] Using Python from: ${p}`);
+                    return p;
+                } catch (e) {}
+            }
+            
+            // If we get here, try 'py' as a fallback
+            try {
+                const pyVersion = execSync('py --version', { encoding: 'utf-8', stdio: 'pipe' });
+                console.log(`[Init] Using Python: ${pyVersion.trim()}`);
+                return 'py';
+            } catch (e) {}
+        } else {
+            // Linux/Mac paths
+            const venvPaths = [
+                path.join(__dirname, 'venv', 'bin', 'python3'),
+                path.join(__dirname, 'venv', 'bin', 'python'),
+                'python3',
+                'python'
+            ];
+            for (const p of venvPaths) {
+                try {
+                    execSync(`${p} --version`, { stdio: 'ignore' });
+                    console.log(`[Init] Using Python from: ${p}`);
+                    return p;
+                } catch (e) {}
+            }
+        }
+    } catch (e) {
+        console.warn('[Init] Could not detect Python:', e.message);
+    }
+    
+    console.error('[Init] WARNING: Python not found! Please install Python or set up a venv.');
+    console.error('[Init] On Windows, you can install Python from https://python.org/');
+    console.error('[Init] Or disable the Microsoft Store alias: Settings > Apps > Advanced > App execution aliases');
+    return 'python'; // Fallback
+}
+
+const PYTHON_PATH = getPythonPath();
 const TRAIN_SCRIPT = path.join(__dirname, 'yolo_workflow', 'scripts', 'train_model.py');
 const GESTURE_TRAIN_SCRIPT = path.join(__dirname, 'gesture_workflow', 'scripts', 'dtw_gesture.py');
+
+// Helper: try multiple Python candidates (checks availability with --version)
+function spawnPythonWithFallback(args, options) {
+    const candidates = [];
+    if (process.platform === 'win32') {
+        candidates.push(PYTHON_PATH, 'py', 'python', 'python3', path.join(__dirname, 'venv', 'Scripts', 'python.exe'));
+    } else {
+        candidates.push(PYTHON_PATH, 'python3', 'python', path.join(__dirname, 'venv', 'bin', 'python3'));
+    }
+
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+        try {
+            // verify candidate exists and responds to --version
+            execSync(`"${candidate}" --version`, { stdio: 'ignore' });
+            console.log(`[Spawn] Using python candidate: ${candidate}`);
+            return spawn(candidate, args, options);
+        } catch (e) {
+            // candidate unavailable, try next
+        }
+    }
+
+    // Last resort - try original PATH value (may emit error event)
+    console.warn('[Spawn] No python candidate validated; attempting default spawn');
+    return spawn(PYTHON_PATH, args, options);
+}
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -61,8 +138,8 @@ app.post('/api/save-dataset', upload.single('dataset'), (req, res) => {
         zip.extractAllTo(batchDir, true);
         
         // Process extracted files to match YOLO structure
-        // The zip contains dataset/images and dataset/labels
-        // We want to move them to batchDir/images and batchDir/labels
+        // The zip contains dataset/images, dataset/labels, and optionally dataset/masks
+        // We want to move them to batchDir/images, batchDir/labels, batchDir/masks
         
         const extractedRoot = path.join(batchDir, 'dataset');
         if (fs.existsSync(extractedRoot)) {
@@ -104,6 +181,7 @@ function updateClassesAndLabels(batchDir) {
             .filter(c => c);
     }
 
+    // Process bounding box labels (YOLO format)
     const labelsDir = path.join(batchDir, 'labels');
     if (fs.existsSync(labelsDir)) {
         const files = fs.readdirSync(labelsDir);
@@ -128,7 +206,7 @@ function updateClassesAndLabels(batchDir) {
                 if (classIdx === -1) {
                     classes.push(labelName);
                     classIdx = classes.length - 1;
-                    console.log(`New class added: ${labelName}`);
+                    console.log(`New class added (bbox): ${labelName}`);
                 }
                 
                 newLines.push(`${classIdx} ${coords}`);
@@ -138,9 +216,34 @@ function updateClassesAndLabels(batchDir) {
             fs.writeFileSync(filePath, newLines.join('\n'));
         });
     }
+
+    // Process mask annotations from annotations.json (if present)
+    const annotationsFile = path.join(batchDir, 'annotations.json');
+    if (fs.existsSync(annotationsFile)) {
+        try {
+            const annotationsData = JSON.parse(fs.readFileSync(annotationsFile, 'utf-8'));
+            
+            // Extract mask labels and add to classes
+            annotationsData.forEach(item => {
+                if (item.masks && Array.isArray(item.masks)) {
+                    item.masks.forEach(mask => {
+                        const labelName = mask.label;
+                        let classIdx = classes.findIndex(c => c.toLowerCase() === labelName.toLowerCase());
+                        if (classIdx === -1) {
+                            classes.push(labelName);
+                            console.log(`New class added (mask): ${labelName}`);
+                        }
+                    });
+                }
+            });
+        } catch (e) {
+            console.warn('Warning: Could not process annotations.json for masks:', e.message);
+        }
+    }
     
     // Save updated classes
     fs.writeFileSync(CLASSES_FILE, classes.join('\n'));
+    console.log(`Total classes: ${classes.length}`);
 }
 
 app.get('/api/classes', (req, res) => {
@@ -202,7 +305,7 @@ app.post('/api/train', (req, res) => {
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    const pythonProcess = spawn(PYTHON_PATH, [TRAIN_SCRIPT]);
+    const pythonProcess = spawnPythonWithFallback([TRAIN_SCRIPT]);
     
     pythonProcess.stdout.on('data', (data) => {
         const msg = data.toString();
@@ -252,7 +355,7 @@ app.post('/api/detect', express.json({ limit: '10mb' }), async (req, res) => {
         const detectScript = path.join(__dirname, 'yolo_workflow', 'scripts', 'detect.py');
         
         const result = await new Promise((resolve, reject) => {
-            const proc = spawn(PYTHON_PATH, [detectScript, tempPath]);
+            const proc = spawnPythonWithFallback([detectScript, tempPath]);
             let output = '';
             let error = '';
             
@@ -522,7 +625,7 @@ app.post('/api/gestures/train', (req, res) => {
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Transfer-Encoding', 'chunked');
 
-    const pythonProcess = spawn(PYTHON_PATH, [GESTURE_TRAIN_SCRIPT, '--train']);
+    const pythonProcess = spawnPythonWithFallback([GESTURE_TRAIN_SCRIPT, '--train']);
     
     pythonProcess.stdout.on('data', (data) => {
         const msg = data.toString();
@@ -592,7 +695,7 @@ function startGestureProcess() {
     gestureProcessReady = false;
     gestureProcessClasses = [];
     
-    gestureInferenceProcess = spawn(PYTHON_PATH, [GESTURE_INFERENCE_SCRIPT, '--stream']);
+    gestureInferenceProcess = spawnPythonWithFallback([GESTURE_INFERENCE_SCRIPT, '--stream']);
     
     let buffer = '';
     

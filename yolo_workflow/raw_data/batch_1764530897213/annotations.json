@@ -1,0 +1,14 @@
+[
+  {
+    "image": "588643108_2596906610702246_6397002236098137626_n.jpg",
+    "annotations": [],
+    "masks": [
+      {
+        "id": "znm0cgoun",
+        "label": "Pen",
+        "mask": "588643108_2596906610702246_6397002236098137626_n_mask_znm0cgoun.png",
+        "annotationType": "mask"
+      }
+    ]
+  }
+]

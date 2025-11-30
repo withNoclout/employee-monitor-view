@@ -1,0 +1,25 @@
+[
+  {
+    "id": "ann_1764528388475",
+    "annotationType": "mask",
+    "label": "mask",
+    "image": "annotations_uploads\\ann_1764528388475\\images.jpg",
+    "mask": "annotations_uploads\\ann_1764528388475\\mask_resized_1764528388480.png",
+    "bbox": null,
+    "created_at": "2025-11-30T18:46:28.490Z"
+  },
+  {
+    "id": "ann_1764528421701",
+    "annotationType": "bbox",
+    "label": "Pen",
+    "image": "annotations_uploads\\ann_1764528421701\\images.jpg",
+    "mask": null,
+    "bbox": {
+      "x": 0.035555555555555556,
+      "y": 0.04666666666666667,
+      "width": 0.9377777777777778,
+      "height": 0.9511111111111111
+    },
+    "created_at": "2025-11-30T18:47:01.702Z"
+  }
+]

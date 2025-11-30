@@ -1,0 +1,14 @@
+[
+  {
+    "image": "images.jpg",
+    "annotations": [],
+    "masks": [
+      {
+        "id": "fkhxmpdrp",
+        "label": "Pen",
+        "mask": "images_mask_fkhxmpdrp.png",
+        "annotationType": "mask"
+      }
+    ]
+  }
+]

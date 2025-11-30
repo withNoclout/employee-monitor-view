@@ -8,7 +8,8 @@ names:
 - pen
 - snack
 - ear
-nc: 9
-path: /home/noclout/employee-monitor-view/yolo_workflow/processed_data
+- Blue pen
+nc: 10
+path: D:\coding\Software-dev\github\employee-monitor-view\yolo_workflow\processed_data
 train: train/images
 val: val/images

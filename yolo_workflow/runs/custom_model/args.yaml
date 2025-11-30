@@ -1,7 +1,7 @@
 task: detect
 mode: train
-model: /home/noclout/employee-monitor-view/yolo_workflow/runs/custom_model_phase1/weights/best.pt
-data: /home/noclout/employee-monitor-view/yolo_workflow/data.yaml
+model: D:\coding\Software-dev\github\employee-monitor-view\yolo_workflow\runs\custom_model_phase1\weights\best.pt
+data: D:\coding\Software-dev\github\employee-monitor-view\yolo_workflow\data.yaml
 epochs: 90
 time: null
 patience: 20
@@ -12,7 +12,7 @@ save_period: -1
 cache: false
 device: cpu
 workers: 8
-project: /home/noclout/employee-monitor-view/yolo_workflow/runs
+project: D:\coding\Software-dev\github\employee-monitor-view\yolo_workflow\runs
 name: custom_model
 exist_ok: true
 pretrained: true
@@ -103,4 +103,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: botsort.yaml
-save_dir: /home/noclout/employee-monitor-view/yolo_workflow/runs/custom_model
+save_dir: D:\coding\Software-dev\github\employee-monitor-view\yolo_workflow\runs\custom_model

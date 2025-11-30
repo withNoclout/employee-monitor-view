@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer } from "lucide-react";
+import { Brain, Upload, Image as ImageIcon, Plus, Trash2, Tag, Database, Play, CheckCircle2, XCircle, Loader2, Eye, EyeOff, Hand, Activity, Camera, Target, Clock, Timer, Edit3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { ImageAnnotator } from "@/components/ImageAnnotator";
@@ -336,6 +336,7 @@ const Training = () => {
           img.onerror = (e) => reject(new Error(`Failed to load image: ${item.image}`));
         });
         
+        // Process bounding box annotations (need MobileNet embeddings)
         for (const ann of item.annotations) {
           // Crop and Infer
           try {
@@ -388,7 +389,8 @@ const Training = () => {
       if (newTrainingData.length > 0) {
         toast.success(`Processed ${newTrainingData.length} new samples! Model needs retraining.`);
       } else {
-        toast.warning("No valid samples processed. Check console for details.");
+        // It's OK if no bbox annotations - user might be using masks only
+        toast.info("Dataset saved to server. (No bounding box samples to process locally, but masks are being stored)");
       }
     } catch (error: any) {
       console.error("Error processing dataset:", error);
@@ -1279,7 +1281,7 @@ const Training = () => {
           <div>
             <h1 className="text-4xl font-bold text-foreground mb-2 flex items-center gap-3">
               <Brain className="w-10 h-10 text-primary" />
-              AI Training Center
+              AI Training Center 
             </h1>
             <p className="text-muted-foreground text-lg">
               Manage dataset, label images, and train your model
