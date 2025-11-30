@@ -11,14 +11,7 @@ import * as handPoseDetection from '@tensorflow-models/hand-pose-detection';
 import { useActivityLog } from "@/hooks/useActivityLog";
 
 // Employee data
-const employeeData: Record<string, { name: string; position: string; status: string }> = {
-  "emp-001": { name: "test test", position: "Senior Developer", status: "excellent" },
-  "emp-002": { name: "Michael Chen", position: "Project Manager", status: "good" },
-  "emp-003": { name: "Emma Williams", position: "UI Designer", status: "excellent" },
-  "emp-004": { name: "James Brown", position: "QA Engineer", status: "needs-attention" },
-  "emp-005": { name: "Lisa Anderson", position: "DevOps Engineer", status: "good" },
-  "emp-006": { name: "David Martinez", position: "Backend Developer", status: "excellent" },
-};
+// Employee data fetched from server now
 
 
 
@@ -50,7 +43,10 @@ interface Task {
   totalSteps: number;
   // New fields for persistence
   dateKey?: string; // e.g., "2025-11-27" for daily tasks
-  completedAt?: string; // ISO timestamp when completed
+  completedAt?: string; // Legacy camelCase
+  completed_at?: string; // Server snake_case
+  assigned_at?: string; // Server snake_case
+  started_at?: string; // When the user actually clicked Start
   employeeId?: string; // Which employee completed this
 }
 
@@ -214,18 +210,49 @@ const Monitor = () => {
   const SLOW_DETECTION_INTERVAL = 2000; // ms - when object already found (>70%)
   const detectionIntervalRef = useRef<number>(FAST_DETECTION_INTERVAL);
 
-  const employee = id ? employeeData[id] : null;
+  const [employee, setEmployee] = useState<any>(null);
 
-  // Cleanup on unmount
+  // Fetch employee data
   useEffect(() => {
-    return () => {
-      if (testTimeoutRef.current) {
-        clearTimeout(testTimeoutRef.current);
+    const fetchEmployee = async () => {
+      try {
+        const res = await fetch('http://localhost:3000/api/employees');
+        const data = await res.json();
+        const found = data.find((e: any) => e.id === id);
+        if (found) {
+          setEmployee(found);
+          // Also load their tasks if available from server
+          if (found.tasks && found.tasks.length > 0) {
+            // Merge server tasks with local storage or prefer server
+            // For now, let's prefer server for real user consistency
+            setTasks(found.tasks);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch employee:", err);
       }
-      setIsComponentDetectionActive(false);
-      setIsTestingComponent(false);
     };
-  }, []);
+    fetchEmployee();
+  }, [id]);
+
+  // Sync tasks to server
+  const syncTasksToServer = async (updatedTasks: Task[]) => {
+    if (!id) return;
+    try {
+      await fetch(`http://localhost:3000/api/employees/${id}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks: updatedTasks })
+      });
+      // Refresh employee data to get updated hours/stats
+      const res = await fetch('http://localhost:3000/api/employees');
+      const data = await res.json();
+      const found = data.find((e: any) => e.id === id);
+      if (found) setEmployee(found);
+    } catch (err) {
+      console.error("Failed to sync tasks:", err);
+    }
+  };
 
   // Request permissions on mount - ensures we have camera + mic before tasks start
   useEffect(() => {
@@ -1087,13 +1114,22 @@ const Monitor = () => {
       setTasks(prev => {
         const updatedTasks = prev.map(t =>
           t.id === selectedTask.id
-            ? { ...t, status: 'completed' as const, completedSteps: totalSteps, completedAt, employeeId: id }
+            ? {
+              ...t,
+              status: 'completed' as const,
+              completedSteps: totalSteps,
+              completedAt, // Keep for legacy
+              completed_at: completedAt, // Add for server
+              employeeId: id
+            }
             : t
         );
 
         // Save to localStorage immediately
         if (id) {
           saveTasks(id, updatedTasks);
+          // Sync to server for real-time dashboard updates
+          syncTasksToServer(updatedTasks);
         }
 
         return updatedTasks;
@@ -1631,6 +1667,22 @@ const Monitor = () => {
 
   const handleStartTask = () => {
     if (!selectedTask) return;
+
+    const started_at = new Date().toISOString();
+
+    // Update local state
+    const updatedTask = { ...selectedTask, status: 'in-progress' as const, started_at };
+    setSelectedTask(updatedTask);
+
+    setTasks(prev => {
+      const newTasks = prev.map(t => t.id === selectedTask.id ? updatedTask : t);
+      if (id) {
+        saveTasks(id, newTasks);
+        syncTasksToServer(newTasks);
+      }
+      return newTasks;
+    });
+
     setIsTaskActive(true);
     setCurrentStepIndex(0);
     currentStepIndexRef.current = 0; // Sync ref

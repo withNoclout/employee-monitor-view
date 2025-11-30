@@ -11,6 +11,9 @@ interface EmployeeCardProps {
   performanceScore: number;
   status: "excellent" | "good" | "needs-attention";
   lastActive: string;
+  completedTasks: number;
+  pendingTasks: number;
+  hoursWorked: number;
 }
 
 export const EmployeeCard = ({
@@ -20,6 +23,9 @@ export const EmployeeCard = ({
   performanceScore,
   status,
   lastActive,
+  completedTasks,
+  pendingTasks,
+  hoursWorked,
 }: EmployeeCardProps) => {
   const navigate = useNavigate();
 
@@ -45,18 +51,19 @@ export const EmployeeCard = ({
     }
   };
 
+  const totalTasks = completedTasks + pendingTasks;
+
   return (
     <Card className="overflow-hidden transition-all duration-300 hover:shadow-industrial-lg border-border group bg-card relative">
       {/* Tech accent line */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-accent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-      
+
       {/* Status indicator bar */}
-      <div className={`h-1 ${
-        status === "excellent" ? "gradient-success" : 
-        status === "good" ? "gradient-warning" : 
-        "gradient-danger"
-      }`} />
-      
+      <div className={`h-1 ${status === "excellent" ? "gradient-success" :
+          status === "good" ? "gradient-warning" :
+            "gradient-danger"
+        }`} />
+
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-5">
           <div className="flex items-center gap-4">
@@ -65,9 +72,8 @@ export const EmployeeCard = ({
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/10" />
                 <User className="w-8 h-8 text-white relative z-10" />
               </div>
-              <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-card ${
-                status === "excellent" ? "bg-success" : status === "good" ? "bg-warning" : "bg-danger"
-              } shadow-glow`} />
+              <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-card ${status === "excellent" ? "bg-success" : status === "good" ? "bg-warning" : "bg-danger"
+                } shadow-glow`} />
             </div>
             <div>
               <h3 className="font-semibold text-foreground text-lg mb-0.5">{name}</h3>
@@ -88,32 +94,31 @@ export const EmployeeCard = ({
             </div>
             <div className="w-full bg-muted rounded-full h-2.5 shadow-inner overflow-hidden">
               <div
-                className={`h-2.5 rounded-full transition-all duration-700 ease-out relative ${
-                  status === "excellent"
+                className={`h-2.5 rounded-full transition-all duration-700 ease-out relative ${status === "excellent"
                     ? "gradient-success"
                     : status === "good"
-                    ? "gradient-warning"
-                    : "gradient-danger"
-                }`}
+                      ? "gradient-warning"
+                      : "gradient-danger"
+                  }`}
                 style={{ width: `${performanceScore}%` }}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse-slow" />
               </div>
             </div>
           </div>
-          
+
           {/* Stats Grid */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-muted/20 rounded-lg p-3 border border-border/30 hover:border-primary/30 transition-colors">
               <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mb-1.5">Tasks</p>
-              <p className="font-bold text-foreground text-lg font-mono">8/10</p>
+              <p className="font-bold text-foreground text-lg font-mono">{completedTasks}/{totalTasks}</p>
             </div>
             <div className="bg-muted/20 rounded-lg p-3 border border-border/30 hover:border-primary/30 transition-colors">
               <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide mb-1.5">Hours</p>
-              <p className="font-bold text-foreground text-lg font-mono">6.5h</p>
+              <p className="font-bold text-foreground text-lg font-mono">{hoursWorked}h</p>
             </div>
           </div>
-          
+
           {/* Last Active */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
             <div className="relative flex items-center">

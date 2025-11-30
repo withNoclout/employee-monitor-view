@@ -11,46 +11,79 @@ import { Navbar } from "@/components/Navbar";
 import { DepartmentOverview } from "@/components/DepartmentOverview";
 import { EmployeeDetailView } from "@/components/EmployeeDetailView";
 
+import { SearchBar } from "@/components/SearchBar";
+
 const Index = () => {
   // View state: 'overview' or specific department ID
   const [currentView, setCurrentView] = useState<string>("overview");
 
   // Live Data State
-  const [activeEmployees, setActiveEmployees] = useState(12);
-  const [avgPerformance, setAvgPerformance] = useState(90);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [activeEmployees, setActiveEmployees] = useState(0);
+  const [avgPerformance, setAvgPerformance] = useState(0);
   const [complianceRate, setComplianceRate] = useState(97);
+
+  // Search & Highlight State
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [highlightedDeptId, setHighlightedDeptId] = useState<string | null>(null);
 
   const handleDepartmentClick = (departmentId: string) => {
     setCurrentView(departmentId);
+    setHighlightedDeptId(null); // Clear highlight on enter
   };
 
   const handleBackToOverview = () => {
     setCurrentView("overview");
+    setSelectedEmployeeId(null);
   };
 
-  // Active Employees Logic (Every 1 min)
+  const handleSearchSelect = (employeeId: string) => {
+    const employee = employees.find(e => e.id === employeeId);
+    if (employee) {
+      setSelectedEmployeeId(employeeId);
+      setHighlightedDeptId(employee.department);
+      // Ensure we are on overview to see the highlight first
+      setCurrentView("overview");
+
+      // Optional: scroll to department card? 
+      // For now, the highlight is enough.
+    }
+  };
+
+  // Fetch Employees Logic (Every 3 sec)
   useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveEmployees(prev => {
-        const change = Math.random() > 0.5 ? (Math.random() > 0.5 ? 2 : 1) : (Math.random() > 0.5 ? -2 : -1);
-        let newValue = prev + change;
-        // Clamp between 10 and 15
-        if (newValue > 15) newValue = 15;
-        if (newValue < 10) newValue = 10;
-        return newValue;
-      });
-    }, 60000); // 1 minute
+    const fetchEmployees = async () => {
+      try {
+        const res = await fetch('http://localhost:3000/api/employees');
+        if (res.ok) {
+          const data = await res.json();
+          setEmployees(data);
 
-    return () => clearInterval(interval);
-  }, []);
+          // Calculate stats
+          // Count "Idle" employees (Attention Employees)
+          const idleCount = data.filter((e: any) => e.workingState !== 'working').length;
+          // Active is total - idle? Or just total? 
+          // Let's stick to total active in system for top stats
+          const active = data.length;
+          setActiveEmployees(active);
 
-  // Performance & Compliance Logic (Every 5 sec)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAvgPerformance(prev => Math.max(0, prev - 0.06));
-      setComplianceRate(prev => Math.max(0, prev - 0.045));
-    }, 5000); // 5 seconds
+          const avgPerf = data.length > 0
+            ? data.reduce((acc: number, curr: any) => acc + curr.performanceScore, 0) / data.length
+            : 0;
+          setAvgPerformance(parseFloat(avgPerf.toFixed(1)));
 
+          // Compliance can be mocked or calculated based on "needs-attention" ratio
+          const compliant = data.filter((e: any) => e.status !== 'needs-attention').length;
+          const compRate = data.length > 0 ? (compliant / data.length) * 100 : 100;
+          setComplianceRate(parseFloat(compRate.toFixed(1)));
+        }
+      } catch (error) {
+        console.error("Failed to fetch employees:", error);
+      }
+    };
+
+    fetchEmployees(); // Initial fetch
+    const interval = setInterval(fetchEmployees, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -80,67 +113,18 @@ const Index = () => {
     }
   };
 
-  const employees = [
-    {
-      id: "emp-001",
-      name: "test test",
-      position: "Senior Developer",
-      performanceScore: 95,
-      status: "excellent" as const,
-      lastActive: "2 mins ago",
-    },
-    {
-      id: "emp-002",
-      name: "Michael Chen",
-      position: "Project Manager",
-      performanceScore: 88,
-      status: "good" as const,
-      lastActive: "5 mins ago",
-    },
-    {
-      id: "emp-003",
-      name: "Emma Williams",
-      position: "UI Designer",
-      performanceScore: 92,
-      status: "excellent" as const,
-      lastActive: "1 min ago",
-    },
-    {
-      id: "emp-004",
-      name: "James Brown",
-      position: "QA Engineer",
-      performanceScore: 68,
-      status: "needs-attention" as const,
-      lastActive: "15 mins ago",
-    },
-    {
-      id: "emp-005",
-      name: "Lisa Anderson",
-      position: "DevOps Engineer",
-      performanceScore: 85,
-      status: "good" as const,
-      lastActive: "8 mins ago",
-    },
-    {
-      id: "emp-006",
-      name: "David Martinez",
-      position: "Backend Developer",
-      performanceScore: 91,
-      status: "excellent" as const,
-      lastActive: "3 mins ago",
-    },
-  ];
-
   return (
     <div className="min-h-screen bg-background relative">
       {/* Sticky Navbar */}
       <Navbar />
-      
+
       {/* Subtle industrial background */}
       <div className="absolute inset-0 bg-industrial-grid opacity-[0.02] pointer-events-none" />
-      
+
       <div className="container mx-auto px-4 py-8 max-w-[1600px] relative">
-        <DashboardHeader stats={stats} />
+        <div className="mb-6">
+          <DashboardHeader stats={stats} />
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2">
@@ -151,30 +135,42 @@ const Index = () => {
           </div>
         </div>
 
-        <div className="mb-6">
-          <div className="flex items-center gap-4 mb-3">
+        <div className="mb-6 flex items-end justify-between">
+          <div className="flex items-center gap-4">
             <div className="w-1.5 h-10 gradient-primary rounded-full shadow-glow" />
             <div>
               <h2 className="text-2xl font-bold text-foreground tracking-tight">
                 {currentView === "overview" ? "Department Overview" : "Employee Monitoring"}
               </h2>
               <p className="text-sm text-muted-foreground font-medium">
-                {currentView === "overview" 
+                {currentView === "overview"
                   ? "Select a department to view detailed employee monitoring"
                   : "Real-time monitoring with live camera feeds and performance tracking"
                 }
               </p>
             </div>
           </div>
+
+          {currentView === "overview" && (
+            <div className="mb-1">
+              <SearchBar employees={employees} onSelectEmployee={handleSearchSelect} />
+            </div>
+          )}
         </div>
 
         {/* Conditional rendering based on view */}
         {currentView === "overview" ? (
-          <DepartmentOverview onDepartmentClick={handleDepartmentClick} />
+          <DepartmentOverview
+            onDepartmentClick={handleDepartmentClick}
+            employees={employees}
+            highlightedDeptId={highlightedDeptId}
+          />
         ) : (
-          <EmployeeDetailView 
-            departmentId={currentView} 
+          <EmployeeDetailView
+            departmentId={currentView}
             onBack={handleBackToOverview}
+            employees={employees}
+            selectedEmployeeId={selectedEmployeeId}
           />
         )}
 

@@ -6,78 +6,35 @@ import { motion } from "framer-motion";
 interface EmployeeDetailViewProps {
   departmentId: string;
   onBack: () => void;
+  employees: any[];
+  selectedEmployeeId?: string | null;
 }
 
-export const EmployeeDetailView = ({ departmentId, onBack }: EmployeeDetailViewProps) => {
-  // Mock employee data based on department
-  const getDepartmentEmployees = () => {
-    const baseEmployees = [
-      {
-        id: "emp-001",
-        name: "Sarah Johnson",
-        position: "Production Supervisor",
-        performanceScore: 95,
-        status: "excellent" as const,
-        lastActive: "2 mins ago",
-      },
-      {
-        id: "emp-002",
-        name: "Michael Chen",
-        position: "Machine Operator",
-        performanceScore: 88,
-        status: "good" as const,
-        lastActive: "5 mins ago",
-      },
-      {
-        id: "emp-003",
-        name: "Emma Williams",
-        position: "Quality Inspector",
-        performanceScore: 92,
-        status: "excellent" as const,
-        lastActive: "1 min ago",
-      },
-      {
-        id: "emp-004",
-        name: "James Brown",
-        position: "Assembly Worker",
-        performanceScore: 68,
-        status: "needs-attention" as const,
-        lastActive: "15 mins ago",
-      },
-      {
-        id: "emp-005",
-        name: "Lisa Anderson",
-        position: "Line Lead",
-        performanceScore: 85,
-        status: "good" as const,
-        lastActive: "8 mins ago",
-      },
-      {
-        id: "emp-006",
-        name: "David Martinez",
-        position: "Technician",
-        performanceScore: 91,
-        status: "excellent" as const,
-        lastActive: "3 mins ago",
-      },
-    ];
-
-    return baseEmployees;
-  };
-
-  const getDepartmentName = () => {
+export const EmployeeDetailView = ({ departmentId, onBack, employees, selectedEmployeeId }: EmployeeDetailViewProps) => {
+  const getDepartmentName = (id: string) => {
     const names: Record<string, string> = {
       production: "Production Floor",
       assembly: "Assembly Line",
       maintenance: "Maintenance",
       quality: "Quality Control",
       logistics: "Logistics",
-      workforce: "General Workforce",
+      workforce: "General Workforce"
     };
-    return names[departmentId] || "Department";
+    return names[id] || id;
   };
 
-  const employees = getDepartmentEmployees();
+  // Filter employees for this department
+  let displayEmployees = employees.filter(e => e.department === departmentId);
+
+  // Reorder if there is a selected employee
+  if (selectedEmployeeId) {
+    const selectedIndex = displayEmployees.findIndex(e => e.id === selectedEmployeeId);
+    if (selectedIndex > -1) {
+      const selectedEmp = displayEmployees[selectedIndex];
+      displayEmployees.splice(selectedIndex, 1);
+      displayEmployees.unshift(selectedEmp);
+    }
+  }
 
   return (
     <motion.div
@@ -102,10 +59,10 @@ export const EmployeeDetailView = ({ departmentId, onBack }: EmployeeDetailViewP
           <div className="w-1.5 h-8 gradient-primary rounded-full shadow-glow" />
           <div>
             <h2 className="text-2xl font-bold text-foreground tracking-tight">
-              {getDepartmentName()}
+              {getDepartmentName(departmentId)}
             </h2>
             <p className="text-sm text-muted-foreground font-medium">
-              Showing {employees.length} active employees
+              Showing {displayEmployees.length} active employees
             </p>
           </div>
         </div>
@@ -113,7 +70,7 @@ export const EmployeeDetailView = ({ departmentId, onBack }: EmployeeDetailViewP
 
       {/* Employee Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {employees.map((employee, index) => (
+        {displayEmployees.map((employee, index) => (
           <motion.div
             key={employee.id}
             initial={{ opacity: 0, y: 20 }}

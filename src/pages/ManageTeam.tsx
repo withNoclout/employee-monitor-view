@@ -27,14 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 // Mock employee data (shared with Monitor.tsx)
-const allEmployees = [
-  { id: "emp-001", name: "test test", position: "Senior Developer" },
-  { id: "emp-002", name: "Michael Chen", position: "Project Manager" },
-  { id: "emp-003", name: "Emma Williams", position: "UI Designer" },
-  { id: "emp-004", name: "James Brown", position: "QA Engineer" },
-  { id: "emp-005", name: "Lisa Anderson", position: "DevOps Engineer" },
-  { id: "emp-006", name: "David Martinez", position: "Backend Developer" },
-];
+// Mock employee data replaced with fetch logic inside component
 
 interface WorkInstruction {
   id: string;
@@ -53,6 +46,20 @@ interface Team {
 
 const ManageTeam = () => {
   const navigate = useNavigate();
+  const [allEmployees, setAllEmployees] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const res = await fetch('http://localhost:3000/api/employees');
+        const data = await res.json();
+        setAllEmployees(data);
+      } catch (err) {
+        console.error("Failed to fetch employees:", err);
+      }
+    };
+    fetchEmployees();
+  }, []);
   const [savedWIs, setSavedWIs] = useState<WorkInstruction[]>([]);
   const [newTeamName, setNewTeamName] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -76,11 +83,68 @@ const ManageTeam = () => {
     }
   }, []);
 
-  const assignWI = (teamId: string, wiId: string) => {
+  // Just update local state when dropdown changes
+  const handleWISelect = (teamId: string, wiId: string) => {
     setTeams(teams.map(team =>
       team.id === teamId ? { ...team, currentWIId: wiId } : team
     ));
-    toast.success("Work Instruction assigned successfully");
+  };
+
+  // Actual sync to server when Save is clicked
+  const saveTeamAssignment = async (teamId: string) => {
+    const team = teams.find(t => t.id === teamId);
+    if (!team || !team.currentWIId) {
+      toast.error("No Work Instruction selected");
+      return;
+    }
+
+    const wi = savedWIs.find(w => w.id === team.currentWIId);
+    if (!wi) return;
+
+    let assignedCount = 0;
+
+    for (const memberId of team.memberIds) {
+      try {
+        // Fetch current employee data
+        const res = await fetch(`http://localhost:3000/api/employees`);
+        const allData = await res.json();
+        const employee = allData.find((e: any) => e.id === memberId);
+
+        if (employee) {
+          const existingTasks = employee.tasks || [];
+
+          // Create new task
+          const newTask = {
+            id: `task-${wi.id}-${Date.now()}`,
+            wiId: wi.id,
+            title: wi.title,
+            type: 'routine',
+            frequency: 'Daily',
+            dueDate: 'Today',
+            status: 'pending',
+            completedSteps: 0,
+            totalSteps: wi.steps?.length || 0,
+            dateKey: new Date().toISOString().split('T')[0],
+            assigned_at: new Date().toISOString(), // Required for hours calculation
+            completedAt: null,
+            employeeId: memberId
+          };
+
+          // Append and sync
+          const updatedTasks = [...existingTasks, newTask];
+
+          await fetch(`http://localhost:3000/api/employees/${memberId}/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks: updatedTasks })
+          });
+          assignedCount++;
+        }
+      } catch (err) {
+        console.error(`Failed to assign task to ${memberId}:`, err);
+      }
+    }
+    toast.success(`Assigned "${wi.title}" to ${assignedCount} members`);
   };
 
   const addMember = (teamId: string, employeeId: string) => {
@@ -90,15 +154,9 @@ const ManageTeam = () => {
           toast.error("Employee already in this team");
           return team;
         }
-        // Remove from other teams first
-        const otherTeams = teams.filter(t => t.id !== teamId && t.memberIds.includes(employeeId));
-        if (otherTeams.length > 0) {
-          toast.info(`Moved employee from ${otherTeams[0].name}`);
-        }
         return { ...team, memberIds: [...team.memberIds, employeeId] };
       }
-      // Remove from other teams
-      return { ...team, memberIds: team.memberIds.filter(id => id !== employeeId) };
+      return team;
     }));
   };
 
@@ -381,29 +439,39 @@ const ManageTeam = () => {
                     {/* Assign New Instruction */}
                     <div className="space-y-2.5">
                       <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Assign New Instruction</label>
-                      <Select
-                        onValueChange={(value) => assignWI(team.id, value)}
-                        value={team.currentWIId || undefined}
-                      >
-                        <SelectTrigger className="border-border/40 shadow-sm h-9 text-sm">
-                          <SelectValue placeholder="Select Work Instruction" />
-                        </SelectTrigger>
-                        <SelectContent className="shadow-industrial-lg border-border/40">
-                          {savedWIs.length === 0 ? (
-                            <div className="p-3 text-sm text-muted-foreground text-center">
-                              No saved instructions found.
-                              <br />
-                              <span className="text-[11px] opacity-70 font-medium">Go to Build WI to create one.</span>
-                            </div>
-                          ) : (
-                            savedWIs.map((wi) => (
-                              <SelectItem key={wi.id} value={wi.id}>
-                                {wi.title}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex gap-2">
+                        <Select
+                          onValueChange={(value) => handleWISelect(team.id, value)}
+                          value={team.currentWIId || undefined}
+                        >
+                          <SelectTrigger className="border-border/40 shadow-sm h-9 text-sm flex-1">
+                            <SelectValue placeholder="Select Work Instruction" />
+                          </SelectTrigger>
+                          <SelectContent className="shadow-industrial-lg border-border/40">
+                            {savedWIs.length === 0 ? (
+                              <div className="p-3 text-sm text-muted-foreground text-center">
+                                No saved instructions found.
+                                <br />
+                                <span className="text-[11px] opacity-70 font-medium">Go to Build WI to create one.</span>
+                              </div>
+                            ) : (
+                              savedWIs.map((wi) => (
+                                <SelectItem key={wi.id} value={wi.id}>
+                                  {wi.title}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          className="h-9 px-3 shadow-industrial cursor-pointer bg-primary/90 hover:bg-primary"
+                          onClick={() => saveTeamAssignment(team.id)}
+                          disabled={!team.currentWIId}
+                        >
+                          Save
+                        </Button>
+                      </div>
                     </div>
 
                     {/* Footer Actions */}

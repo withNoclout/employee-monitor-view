@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 
 import { appendLog, readLogs } from './src/server/logService.js';
 
@@ -99,39 +99,23 @@ app.get('/api/train/logs', (req, res) => {
 // New endpoint to provide parsed loss metrics for the graph
 app.get('/api/train/metrics', (req, res) => {
     try {
-        const logContent = fs.readFileSync(TRAINING_LOG_FILE, 'utf-8');
-        const lines = logContent.split('\n');
+        const logs = fs.readFileSync(TRAINING_LOG_FILE, 'utf-8');
+        const lines = logs.split('\n');
         const metrics = [];
-        const progressPrefix = '[PROGRESS]';
         let isTrainingComplete = false;
-        for (const line of lines) {
-            if (line.includes('[TRAINING_COMPLETE]')) {
-                isTrainingComplete = true;
-            }
-            if (line.includes(progressPrefix)) {
-                try {
-                    const jsonStr = line.split(progressPrefix)[1];
-                    const data = JSON.parse(jsonStr);
 
-                    if (data.type === 'epoch_end') {
-                        metrics.push({
-                            epoch: data.epoch,
-                            totalEpochs: data.total_epochs,
-                            loss: data.total_loss,
-                            box_loss: data.box_loss,
-                            cls_loss: data.cls_loss,
-                            dfl_loss: data.dfl_loss,
-                            mAP50: 0,
-                            mAP50_95: 0
-                        });
-                    } else if (data.type === 'validation' && metrics.length > 0) {
-                        const lastMetric = metrics[metrics.length - 1];
-                        lastMetric.mAP50 = data.mAP50;
-                        lastMetric.mAP50_95 = data.mAP50_95;
-                    }
-                } catch (e) {
-                    console.error('Error parsing log line:', e);
-                }
+        const parseValue = (line, key) => {
+            const regex = new RegExp(`${key}\\s*[:=]\\s*([\\d.]+)`);
+            const match = line.match(regex);
+            return match ? parseFloat(match[1]) : undefined;
+        };
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+
+            // Check for completion
+            if (line.includes("Training completed successfully")) {
+                isTrainingComplete = true;
             }
         }
         res.json({ metrics, isTrainingComplete });
@@ -187,6 +171,224 @@ app.get('/api/train/summary', (req, res) => {
 });
 
 // --- End Log Service Endpoints ---
+
+// ... imports ...
+
+// --- Mock Employee Simulation ---
+const MOCK_DATA_FILE = path.join(__dirname, 'mock_employees.json');
+let mockEmployees = [];
+
+// Persistent Real User State
+let realUser = {
+    id: "emp-001",
+    name: "Test User1",
+    department: "production",
+    departmentName: "Production Floor",
+    position: "Super Admin",
+    performanceScore: 100,
+    status: "excellent",
+    workingState: "working",
+    lastActive: "Just now",
+    hoursWorked: 0,
+    tasks: [], // Reset for fresh start
+    pendingTasks: 0,
+    completedTasks: 0,
+    taskTimer: 0,
+    isReal: true
+};
+
+const loadMockData = () => {
+    try {
+        let fileData = [];
+        if (fs.existsSync(MOCK_DATA_FILE)) {
+            // Read file freshly
+            const data = fs.readFileSync(MOCK_DATA_FILE, 'utf-8');
+            fileData = JSON.parse(data);
+            console.log(`[Simulation] Loaded ${fileData.length} employees from file.`);
+        } else {
+            console.warn("[Simulation] mock_employees.json not found. Run generator script first.");
+        }
+
+        // Merge Real User
+        // If realUser was already in memory, keep its state.
+        // If not, use the default defined above.
+
+        // Filter out any potential duplicate emp-001 from file (just in case)
+        mockEmployees = fileData.filter(e => e.id !== 'emp-001');
+
+        // Add real user to the top
+        mockEmployees.unshift(realUser);
+
+    } catch (error) {
+        console.error("[Simulation] Failed to load mock data:", error);
+        mockEmployees = [realUser];
+    }
+};
+
+const regenerateMockData = () => {
+    // Optimization: Skip regeneration if training is active to save resources
+    if (activeTrainingProcess || activeGestureTrainingProcess) {
+        console.log("[Simulation] Training active, skipping mock data regeneration.");
+        return;
+    }
+
+    console.log("[Simulation] Regenerating mock data...");
+    exec(`${PYTHON_PATH} mock_data_generator.py`, { cwd: __dirname }, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`[Simulation] Error regenerating data: ${error.message}`);
+            return;
+        }
+        if (stderr) {
+            console.error(`[Simulation] Generator stderr: ${stderr}`);
+        }
+        console.log(`[Simulation] Generator stdout: ${stdout.trim()}`);
+
+        // Reload data after generation
+        loadMockData();
+    });
+};
+
+// Initial Load
+if (fs.existsSync(MOCK_DATA_FILE)) {
+    loadMockData();
+} else {
+    regenerateMockData();
+}
+
+// Regenerate every 60 seconds
+setInterval(regenerateMockData, 60000);
+
+// Simulation Loop (runs every 3 seconds)
+setInterval(() => {
+    if (mockEmployees.length === 0) return;
+
+    mockEmployees = mockEmployees.map(emp => {
+        // Skip Real User (emp-001) updates
+        if (emp.isReal || emp.id === 'emp-001') {
+            // Update reference to keep it in sync if needed, but don't simulate
+            realUser = emp;
+            return emp;
+        }
+
+        let { pendingTasks, completedTasks, workingState, taskTimer, status, performanceScore, tasks } = emp;
+
+        if (workingState === 'idle') {
+            // Chance to start working
+            if (pendingTasks > 0 && Math.random() > 0.2) {
+                workingState = 'working';
+                taskTimer = 5 + Math.floor(Math.random() * 10); // Work for 5-15 ticks
+
+                // Find a pending task to set as "IN_PROGRESS"
+                if (tasks && tasks.length > 0) {
+                    const taskIndex = tasks.findIndex(t => t.status === 'PENDING');
+                    if (taskIndex !== -1) {
+                        tasks[taskIndex].status = 'IN_PROGRESS';
+                    }
+                }
+            }
+        } else if (workingState === 'working') {
+            taskTimer--;
+            if (taskTimer <= 0) {
+                // Task complete
+                if (pendingTasks > 0) {
+                    pendingTasks--;
+                    completedTasks++;
+
+                    // Find the IN_PROGRESS task and mark COMPLETE
+                    if (tasks && tasks.length > 0) {
+                        const taskIndex = tasks.findIndex(t => t.status === 'IN_PROGRESS');
+                        if (taskIndex !== -1) {
+                            tasks[taskIndex].status = 'COMPLETED';
+                            tasks[taskIndex].completed_at = new Date().toISOString();
+                        }
+                    }
+                }
+                workingState = 'idle';
+
+                // Update performance slightly
+                if (Math.random() > 0.8 && performanceScore < 100) performanceScore++;
+            }
+        }
+
+        // Update status based on performance
+        if (performanceScore > 90) status = 'excellent';
+        else if (performanceScore > 75) status = 'good';
+        else status = 'needs-attention';
+
+        // Update last active
+        const lastActive = workingState === 'working' ? 'Just now' : `${Math.floor(Math.random() * 5) + 1} mins ago`;
+
+        return {
+            ...emp,
+            pendingTasks,
+            completedTasks,
+            workingState,
+            taskTimer,
+            status,
+            performanceScore,
+            lastActive,
+            tasks
+        };
+    });
+}, 3000);
+
+app.get('/api/employees', (req, res) => {
+    res.json(mockEmployees);
+});
+
+// Helper to calculate hours worked from tasks
+const calculateHoursWorked = (tasks) => {
+    if (!tasks || tasks.length === 0) return 0;
+
+    let totalMinutes = 0;
+    tasks.forEach(t => {
+        // Use started_at if available (actual work time), otherwise fall back to assigned_at
+        const startTimeStr = t.started_at || t.assigned_at;
+
+        if (t.status === 'COMPLETED' && startTimeStr && t.completed_at) {
+            const start = new Date(startTimeStr);
+            const end = new Date(t.completed_at);
+            const diffMs = end - start;
+            const diffMins = Math.max(0, Math.floor(diffMs / 60000)); // Ensure no negative
+            totalMinutes += diffMins;
+        }
+    });
+
+    return parseFloat((totalMinutes / 60).toFixed(2)); // 2 decimal places for precision
+};
+
+// Update specific employee (used by Monitor page to sync real user data)
+app.post('/api/employees/:id/update', (req, res) => {
+    const { id } = req.params;
+    const updates = req.body; // Expect { tasks, ... }
+
+    const empIndex = mockEmployees.findIndex(e => e.id === id);
+    if (empIndex !== -1) {
+        // Update the employee
+        const emp = mockEmployees[empIndex];
+
+        // Merge updates
+        const updatedEmp = { ...emp, ...updates };
+
+        // Recalculate derived stats if tasks changed
+        if (updates.tasks) {
+            updatedEmp.completedTasks = updates.tasks.filter(t => t.status === 'COMPLETED' || t.status === 'completed').length;
+            updatedEmp.pendingTasks = updates.tasks.filter(t => t.status !== 'COMPLETED' && t.status !== 'completed').length;
+            updatedEmp.hoursWorked = calculateHoursWorked(updates.tasks);
+        }
+
+        mockEmployees[empIndex] = updatedEmp;
+
+        // If it's the real user, update the persistent reference too
+        if (emp.isReal || emp.id === 'emp-001') {
+            realUser = updatedEmp;
+        }
+
+        res.json({ success: true, employee: updatedEmp });
+    } else {
+        res.status(404).json({ error: "Employee not found" });
+    }
+});
 
 app.post('/api/save-dataset', upload.single('dataset'), (req, res) => {
     if (!req.file) {
